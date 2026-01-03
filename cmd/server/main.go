@@ -202,17 +202,12 @@ func (app *Application) Start(ctx context.Context) error {
 	subscribeChannels := []string{
 		// SOL ticker 24h
 		"w3w@So11111111111111111111111111111111111111111@CT_501@ticker24h",
-		"w3w@So11111111111111111111111111111111111111112@CT_501@ticker24h",
-
 		// Example token ticker 24h
 		"w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@ticker24h",
 		// Holders stream
 		"w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@holders",
 		// Transaction streams
 		"tx@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
-		"tx@tag@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
-		// Kline 5m
-		"kl@16@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@5m",
 	}
 
 	// Build subscribe message with custom format

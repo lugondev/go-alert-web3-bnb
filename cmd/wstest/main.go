@@ -28,14 +28,14 @@ func main() {
 		ID:     "3",
 		Method: "SUBSCRIBE",
 		Params: []string{
+			// SOL ticker 24h
 			"w3w@So11111111111111111111111111111111111111111@CT_501@ticker24h",
-			"w3w@So11111111111111111111111111111111111111112@CT_501@ticker24h",
-
+			// Example token ticker 24h
 			"w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@ticker24h",
-			"tx@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
-			"tx@tag@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+			// Holders stream
 			"w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@holders",
-			"kl@16@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@5m",
+			// Transaction streams
+			"tx@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
 		},
 	}
 

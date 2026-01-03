@@ -45,7 +45,8 @@ A Golang application that monitors blockchain events via WebSocket and sends ale
 ```
 .
 ├── cmd/
-│   └── server/          # Application entry point
+│   ├── server/          # Application entry point
+│   └── wstest/          # WebSocket connection tester
 ├── internal/
 │   ├── config/          # Configuration management
 │   ├── handler/         # Event processing
@@ -65,7 +66,7 @@ A Golang application that monitors blockchain events via WebSocket and sends ale
 
 ### Prerequisites
 
--   Go 1.21+
+-   Go 1.23+
 -   Redis 6+
 -   Docker (optional)
 
@@ -99,7 +100,7 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
 # WebSocket
-WS_URL=wss://stream.binance.com:9443/ws
+WS_URL=wss://nbstream.binance.com/w3w/stream
 
 # Redis (for deduplication)
 REDIS_HOST=localhost
@@ -121,6 +122,54 @@ docker-compose up -d
 
 # Scale to multiple instances (Redis handles deduplication)
 docker-compose up -d --scale go-alert-web3-bnb=3
+```
+
+### WebSocket Test Tool
+
+Test WebSocket connection and subscriptions:
+
+```bash
+# Run WebSocket tester
+go run ./cmd/wstest/main.go
+```
+
+## W3W Stream Channels
+
+The application supports various W3W (Web3 Watch) stream channels:
+
+### Channel Formats
+
+| Stream Type   | Format                                         | Example                                                    |
+| ------------- | ---------------------------------------------- | ---------------------------------------------------------- |
+| Ticker 24h    | `w3w@<contract>@<chain_type>@ticker24h`        | `w3w@So111...1111@CT_501@ticker24h`                        |
+| Holders       | `w3w@<contract>@<chain_type>@holders`          | `w3w@pumpCmX...Dfn@CT_501@holders`                         |
+| Transactions  | `tx@<chain_id>_<contract>`                     | `tx@16_pumpCmX...Dfn`                                      |
+| Tagged Tx     | `tx@tag@<chain_id>_<contract>`                 | `tx@tag@16_pumpCmX...Dfn`                                  |
+| Kline         | `kl@<chain_id>@<contract>@<interval>`          | `kl@16@pumpCmX...Dfn@5m`                                   |
+
+### Chain Types
+
+| Chain Type | Description |
+| ---------- | ----------- |
+| `CT_501`   | Solana      |
+
+### Kline Intervals
+
+Supported intervals: `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`
+
+### Subscribe Example
+
+```go
+subscribeMsg := map[string]interface{}{
+    "id":     "3",
+    "method": "SUBSCRIBE",
+    "params": []string{
+        "w3w@So11111111111111111111111111111111111111111@CT_501@ticker24h",
+        "w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@holders",
+        "tx@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+        "kl@16@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@5m",
+    },
+}
 ```
 
 ## How Deduplication Works
@@ -150,25 +199,58 @@ if errors.Is(err, redis.ErrEventAlreadyProcessed) {
 
 ### Environment Variables
 
-| Variable                | Description                | Default                            |
-| ----------------------- | -------------------------- | ---------------------------------- |
-| `APP_NAME`              | Application name           | `go-alert-web3-bnb`                |
-| `APP_ENV`               | Environment                | `development`                      |
-| `WS_URL`                | WebSocket URL              | `wss://stream.binance.com:9443/ws` |
-| `WS_RECONNECT_INTERVAL` | Reconnect interval         | `5s`                               |
-| `WS_MAX_RETRIES`        | Max reconnection attempts  | `10`                               |
-| `TELEGRAM_BOT_TOKEN`    | Telegram bot token         | **Required**                       |
-| `TELEGRAM_CHAT_ID`      | Telegram chat ID           | **Required**                       |
-| `TELEGRAM_RATE_LIMIT`   | Messages per minute        | `30`                               |
-| `REDIS_HOST`            | Redis host                 | `localhost`                        |
-| `REDIS_PORT`            | Redis port                 | `6379`                             |
-| `REDIS_PASSWORD`        | Redis password             | ``                                 |
-| `REDIS_DB`              | Redis database             | `0`                                |
-| `REDIS_POOL_SIZE`       | Connection pool size       | `10`                               |
-| `REDIS_LOCK_TTL`        | Distributed lock TTL       | `30s`                              |
-| `REDIS_PROCESSED_TTL`   | Event processed marker TTL | `5m`                               |
-| `LOG_LEVEL`             | Log level                  | `info`                             |
-| `LOG_FORMAT`            | Log format (json/text)     | `json`                             |
+| Variable                | Description                | Default                                |
+| ----------------------- | -------------------------- | -------------------------------------- |
+| `APP_NAME`              | Application name           | `go-alert-web3-bnb`                    |
+| `APP_ENV`               | Environment                | `development`                          |
+| `WS_URL`                | WebSocket URL              | `wss://nbstream.binance.com/w3w/stream`|
+| `WS_RECONNECT_INTERVAL` | Reconnect interval         | `5s`                                   |
+| `WS_MAX_RETRIES`        | Max reconnection attempts  | `10`                                   |
+| `TELEGRAM_BOT_TOKEN`    | Telegram bot token         | **Required**                           |
+| `TELEGRAM_CHAT_ID`      | Telegram chat ID           | **Required**                           |
+| `TELEGRAM_RATE_LIMIT`   | Messages per minute        | `30`                                   |
+| `REDIS_HOST`            | Redis host                 | `localhost`                            |
+| `REDIS_PORT`            | Redis port                 | `6379`                                 |
+| `REDIS_PASSWORD`        | Redis password             | ``                                     |
+| `REDIS_DB`              | Redis database             | `0`                                    |
+| `REDIS_POOL_SIZE`       | Connection pool size       | `10`                                   |
+| `REDIS_LOCK_TTL`        | Distributed lock TTL       | `30s`                                  |
+| `REDIS_PROCESSED_TTL`   | Event processed marker TTL | `5m`                                   |
+| `LOG_LEVEL`             | Log level                  | `info`                                 |
+| `LOG_FORMAT`            | Log format (json/text)     | `json`                                 |
+| `LOG_OUTPUT`            | Log output                 | `stdout`                               |
+
+### YAML Configuration
+
+The application also supports YAML configuration via `configs/config.yaml`:
+
+```yaml
+app:
+  name: go-alert-web3-bnb
+  environment: development
+
+websocket:
+  url: wss://nbstream.binance.com/w3w/stream
+  reconnect_interval: 5s
+  max_retries: 10
+  ping_interval: 30s
+  pong_timeout: 10s
+
+telegram:
+  bot_token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  rate_limit: 30
+
+redis:
+  host: localhost
+  port: 6379
+  lock_ttl: 30s
+  processed_ttl: 5m
+
+logger:
+  level: debug
+  format: text
+```
 
 ## Event Types
 
@@ -222,6 +304,9 @@ make lint
 
 # Tidy dependencies
 make tidy
+
+# Show all available commands
+make help
 ```
 
 ## Production Deployment
@@ -260,6 +345,16 @@ Each instance logs its unique Instance ID:
 	"dedup_enabled": true
 }
 ```
+
+## Dependencies
+
+| Package                         | Description              |
+| ------------------------------- | ------------------------ |
+| `github.com/gorilla/websocket`  | WebSocket client         |
+| `github.com/redis/go-redis/v9`  | Redis client             |
+| `github.com/charmbracelet/log`  | Structured logging       |
+| `github.com/google/uuid`        | UUID generation          |
+| `gopkg.in/yaml.v3`              | YAML configuration       |
 
 ## License
 
