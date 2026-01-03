@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: go-alert-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - alert-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  go-alert-web3-bnb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go-alert-web3-bnb
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - APP_NAME=go-alert-web3-bnb
+      - APP_ENV=production
+      - WS_URL=${WS_URL:-wss://stream.binance.com:9443/ws}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+    volumes:
+      - ./configs:/app/configs:ro
+    networks:
+      - alert-network
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Scale instances for high availability
+  # Use: docker-compose up -d --scale go-alert-web3-bnb=3
+  # Each instance will use Redis for deduplication
+
+networks:
+  alert-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
