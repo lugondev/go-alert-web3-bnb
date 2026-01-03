@@ -40,3 +40,19 @@ logger:
     format: text
     output: stdout
     time_format: '2006-01-02T15:04:05Z07:00'
+
+# Token subscriptions
+# Supported chain_type: CT_501 (Solana), 56 (BSC), 8453 (Base)
+# Chain ID is auto-mapped: CT_501 -> 16, 56 -> 14, 8453 -> 199
+# Available streams: ticker24h, holders, tx, kline
+tokens:
+    - address: So11111111111111111111111111111111111111111
+      chain_type: CT_501
+      streams:
+          - ticker24h
+    - address: pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn
+      chain_type: CT_501
+      streams:
+          - ticker24h
+          - holders
+          - tx

@@ -194,30 +194,21 @@ func (app *Application) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Subscribe to W3W channels
-	// Format: w3w@<contract_address>@<chain_type>@<stream_type>
-	// Streams: ticker24h, holders
-	// Transaction: tx@<chain_id>_<contract_address>
-	// Kline: kl@<chain_id>@<contract_address>@<interval>
-	subscribeChannels := []string{
-		// SOL ticker 24h
-		"w3w@So11111111111111111111111111111111111111111@CT_501@ticker24h",
-		// Example token ticker 24h
-		"w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@ticker24h",
-		// Holders stream
-		"w3w@pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn@CT_501@holders",
-		// Transaction streams
-		"tx@16_pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
-	}
+	// Build subscribe channels from config
+	subscribeChannels := app.config.BuildSubscribeChannels()
 
-	// Build subscribe message with custom format
-	subscribeMsg := map[string]interface{}{
-		"id":     "3",
-		"method": "SUBSCRIBE",
-		"params": subscribeChannels,
-	}
-	if err := app.wsClient.Send(ctx, subscribeMsg); err != nil {
-		app.log.Error("failed to subscribe to channels", logger.F("error", err))
+	if len(subscribeChannels) == 0 {
+		app.log.Warn("no tokens configured for subscription")
+	} else {
+		// Build subscribe message with custom format
+		subscribeMsg := map[string]interface{}{
+			"id":     "3",
+			"method": "SUBSCRIBE",
+			"params": subscribeChannels,
+		}
+		if err := app.wsClient.Send(ctx, subscribeMsg); err != nil {
+			app.log.Error("failed to subscribe to channels", logger.F("error", err))
+		}
 	}
 
 	app.log.Info("application started successfully",
