@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -45,6 +46,7 @@ type Client struct {
 	retryCount   int
 	done         chan struct{}
 	reconnecting bool
+	pingID       uint64 // Auto-incrementing ping ID
 }
 
 // NewClient creates a new WebSocket client
@@ -94,6 +96,7 @@ func (c *Client) connect(ctx context.Context) error {
 	c.conn = conn
 	c.isConnected = true
 	c.retryCount = 0
+	c.pingID = 0 // Reset ping ID on new connection
 	c.mu.Unlock()
 
 	c.log.Info("websocket connected successfully", logger.F("url", c.config.URL))
@@ -141,19 +144,31 @@ func (c *Client) readLoop(ctx context.Context) {
 			c.log.Info("done signal received, stopping read loop")
 			return
 		default:
-			if err := c.readMessage(ctx); err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					c.log.Info("websocket closed normally")
-					return
-				}
+		}
 
-				c.log.Error("read error", logger.F("error", err))
+		if err := c.readMessage(ctx); err != nil {
+			// Check if shutdown is in progress before attempting reconnect
+			select {
+			case <-ctx.Done():
+				c.log.Info("context cancelled during read, stopping read loop")
+				return
+			case <-c.done:
+				c.log.Info("done signal received during read, stopping read loop")
+				return
+			default:
+			}
 
-				// Attempt reconnection
-				if err := c.reconnect(ctx); err != nil {
-					c.log.Error("reconnection failed", logger.F("error", err))
-					return
-				}
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				c.log.Info("websocket closed normally")
+				return
+			}
+
+			c.log.Error("read error", logger.F("error", err))
+
+			// Attempt reconnection
+			if err := c.reconnect(ctx); err != nil {
+				c.log.Error("reconnection failed", logger.F("error", err))
+				return
 			}
 		}
 	}
@@ -209,10 +224,19 @@ func (c *Client) readMessage(ctx context.Context) error {
 	// Try to parse as subscribe response
 	var subResp models.SubscribeResponse
 	if err := json.Unmarshal(message, &subResp); err == nil && subResp.ID != "" {
-		c.log.Info("subscription response received",
-			logger.F("id", subResp.ID),
-			logger.F("result", subResp.Result),
-		)
+		// Check if this is a ping response (GET_PROPERTY response)
+		if subResp.Result != nil {
+			c.log.Debug("pong received", logger.F("id", subResp.ID))
+			// Extend read deadline on successful pong
+			if err := conn.SetReadDeadline(time.Now().Add(c.config.PongTimeout)); err != nil {
+				c.log.Warn("failed to extend read deadline", logger.F("error", err))
+			}
+		} else {
+			c.log.Info("subscription response received",
+				logger.F("id", subResp.ID),
+				logger.F("result", subResp.Result),
+			)
+		}
 		return nil
 	}
 
@@ -238,7 +262,14 @@ func (c *Client) readMessage(ctx context.Context) error {
 	return nil
 }
 
-// pingLoop sends periodic ping messages
+// pingMessage represents the ping request message
+type pingMessage struct {
+	ID     string   `json:"id"`
+	Method string   `json:"method"`
+	Params []string `json:"params"`
+}
+
+// pingLoop sends periodic ping messages using GET_PROPERTY method
 func (c *Client) pingLoop(ctx context.Context) {
 	ticker := time.NewTicker(c.config.PingInterval)
 	defer ticker.Stop()
@@ -250,12 +281,27 @@ func (c *Client) pingLoop(ctx context.Context) {
 		case <-c.done:
 			return
 		case <-ticker.C:
-			c.mu.RLock()
+			c.mu.Lock()
 			conn := c.conn
 			isConnected := c.isConnected
-			c.mu.RUnlock()
+			c.pingID++
+			pingID := c.pingID
+			c.mu.Unlock()
 
 			if !isConnected || conn == nil {
+				continue
+			}
+
+			// Create ping message with incrementing ID
+			msg := pingMessage{
+				ID:     fmt.Sprintf("%d", pingID),
+				Method: "GET_PROPERTY",
+				Params: []string{"combined"},
+			}
+
+			msgBytes, err := json.Marshal(msg)
+			if err != nil {
+				c.log.Error("failed to marshal ping message", logger.F("error", err))
 				continue
 			}
 
@@ -264,10 +310,10 @@ func (c *Client) pingLoop(ctx context.Context) {
 				continue
 			}
 
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
 				c.log.Error("failed to send ping", logger.F("error", err))
 			} else {
-				c.log.Debug("ping sent")
+				c.log.Debug("ping sent", logger.F("id", pingID))
 			}
 		}
 	}
@@ -275,6 +321,17 @@ func (c *Client) pingLoop(ctx context.Context) {
 
 // reconnect attempts to reconnect to the WebSocket
 func (c *Client) reconnect(ctx context.Context) error {
+	// Check if shutdown is already in progress
+	select {
+	case <-ctx.Done():
+		c.log.Info("reconnect skipped: context cancelled")
+		return ctx.Err()
+	case <-c.done:
+		c.log.Info("reconnect skipped: done signal received")
+		return nil
+	default:
+	}
+
 	c.mu.Lock()
 	if c.reconnecting {
 		c.mu.Unlock()

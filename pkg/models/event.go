@@ -148,7 +148,7 @@ type HoldersData struct {
 	Timestamp       string `json:"t"`
 }
 
-// TransactionData represents transaction event data
+// TransactionData represents transaction event data (legacy format)
 type TransactionData struct {
 	Hash            string  `json:"hash"`
 	From            string  `json:"from"`
@@ -158,6 +158,50 @@ type TransactionData struct {
 	Amount          float64 `json:"amount,omitempty"`
 	BlockNumber     uint64  `json:"block_number"`
 	TransactionType string  `json:"type,omitempty"` // buy, sell
+}
+
+// W3WTransactionMessage represents the W3W transaction stream message
+type W3WTransactionMessage struct {
+	D W3WTransactionData `json:"d"`
+	T string             `json:"t"` // timestamp in milliseconds
+	C string             `json:"c"` // channel info
+}
+
+// W3WTransactionData represents W3W transaction data format
+type W3WTransactionData struct {
+	PlatformID        int     `json:"pid"`   // Platform ID (16 = Solana)
+	From              string  `json:"f"`     // From address
+	Hash              string  `json:"h"`     // Block/slot number
+	TxType            string  `json:"tp"`    // Transaction type: buy, sell
+	PairAddress       string  `json:"pa"`    // Pair address
+	Token0Address     string  `json:"t0a"`   // Token 0 address
+	Token1Address     string  `json:"t1a"`   // Token 1 address
+	ValueUSD          float64 `json:"v"`     // Value in USD (of token0 amount)
+	Quote             float64 `json:"q"`     // Quote amount
+	Token0PriceUSD    float64 `json:"t0pu"`  // Token 0 price in USD
+	Token1PriceUSD    float64 `json:"t1pu"`  // Token 1 price in USD
+	TxHash            string  `json:"tx"`    // Transaction hash/signature
+	Timestamp         string  `json:"ts"`    // Timestamp in milliseconds
+	QuoteIndex        int     `json:"qi"`    // Quote index
+	MakerAddress      string  `json:"ma"`    // Maker address
+	BaseAddress       string  `json:"ba"`    // Base address
+	Amount0           float64 `json:"a0"`    // Amount of token 0
+	Amount1           float64 `json:"a1"`    // Amount of token 1
+	TokenInIndex      int     `json:"tii"`   // Token in index
+	Token0Symbol      string  `json:"t0s"`   // Token 0 symbol
+	Token1Symbol      string  `json:"t1s"`   // Token 1 symbol
+	Token0TotalSupply string  `json:"t0ts"`  // Token 0 total supply
+	Token1TotalSupply string  `json:"t1ts"`  // Token 1 total supply
+	LogID             string  `json:"lgid"`  // Log ID
+	IsTop             bool    `json:"top"`   // Is top transaction
+	Token0IsTop       bool    `json:"t0top"` // Token 0 is top
+	Token1IsTop       bool    `json:"t1top"` // Token 1 is top
+	IsExchange        bool    `json:"ex"`    // Is exchange
+	TxTypeNum         int     `json:"txtp"`  // Transaction type number
+	Token0PoolType    int     `json:"t0pt"`  // Token 0 pool type
+	Token1PoolType    int     `json:"t1pt"`  // Token 1 pool type
+	InnerIndex        string  `json:"iix"`   // Inner index
+	TradeID           string  `json:"tid"`   // Trade ID
 }
 
 // BlockData represents block event data
@@ -245,9 +289,18 @@ func (e *Event) ParseHoldersData() (*HoldersData, error) {
 	return &data, nil
 }
 
-// ParseTransactionData parses event data as TransactionData
+// ParseTransactionData parses event data as TransactionData (legacy format)
 func (e *Event) ParseTransactionData() (*TransactionData, error) {
 	var data TransactionData
+	if err := json.Unmarshal(e.Data, &data); err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+// ParseW3WTransactionData parses event data as W3WTransactionMessage
+func (e *Event) ParseW3WTransactionData() (*W3WTransactionMessage, error) {
+	var data W3WTransactionMessage
 	if err := json.Unmarshal(e.Data, &data); err != nil {
 		return nil, err
 	}

@@ -282,6 +282,49 @@ func (r *Repository) UpdateTokenStreams(ctx context.Context, tokenID string, str
 		if t.ID == tokenID {
 			settings.Tokens[i].Streams = streams
 			settings.Tokens[i].UpdatedAt = time.Now()
+			// Initialize stream notify for new streams
+			settings.Tokens[i].InitStreamNotify()
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("token not found: %s", tokenID)
+	}
+
+	return r.SaveSettings(ctx, settings)
+}
+
+// ToggleStreamNotify toggles notification for a specific stream of a token
+func (r *Repository) ToggleStreamNotify(ctx context.Context, tokenID string, streamType StreamType, enabled bool) error {
+	settings, err := r.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for i, t := range settings.Tokens {
+		if t.ID == tokenID {
+			// Check if stream exists in token's streams
+			streamExists := false
+			for _, s := range t.Streams {
+				if s == streamType {
+					streamExists = true
+					break
+				}
+			}
+			if !streamExists {
+				return fmt.Errorf("stream %s not found in token %s", streamType, tokenID)
+			}
+
+			// Initialize StreamNotify if nil
+			if settings.Tokens[i].StreamNotify == nil {
+				settings.Tokens[i].StreamNotify = make(map[StreamType]StreamNotifyConfig)
+			}
+
+			settings.Tokens[i].StreamNotify[streamType] = StreamNotifyConfig{Enabled: enabled}
+			settings.Tokens[i].UpdatedAt = time.Now()
 			found = true
 			break
 		}

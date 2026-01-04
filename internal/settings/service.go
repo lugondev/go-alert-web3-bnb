@@ -108,6 +108,26 @@ func (s *Service) UpdateTokenStreams(ctx context.Context, id string, streams []S
 	return s.repo.UpdateTokenStreams(ctx, id, streams)
 }
 
+// ToggleStreamNotify toggles notification for a specific stream of a token
+func (s *Service) ToggleStreamNotify(ctx context.Context, tokenID string, streamType StreamType, enabled bool) error {
+	// Validate stream type
+	if !isValidStream(streamType) {
+		return fmt.Errorf("invalid stream type: %s", streamType)
+	}
+
+	return s.repo.ToggleStreamNotify(ctx, tokenID, streamType, enabled)
+}
+
+// GetStreamNotifyStatus gets the notification status for a specific stream of a token
+func (s *Service) GetStreamNotifyStatus(ctx context.Context, tokenID string, streamType StreamType) (bool, error) {
+	token, err := s.repo.GetToken(ctx, tokenID)
+	if err != nil {
+		return false, err
+	}
+
+	return token.IsStreamNotifyEnabled(streamType), nil
+}
+
 // GetActiveSubscriptions returns all active subscriptions
 func (s *Service) GetActiveSubscriptions(ctx context.Context) ([]string, error) {
 	return s.repo.GetActiveSubscriptions(ctx)
@@ -159,13 +179,14 @@ func isValidStream(st StreamType) bool {
 
 // TokenFormData represents form data for token creation/update
 type TokenFormData struct {
-	ID            string   `form:"id"`
-	Address       string   `form:"address"`
-	ChainType     string   `form:"chain_type"`
-	Name          string   `form:"name"`
-	Symbol        string   `form:"symbol"`
-	Streams       []string `form:"streams"`
-	NotifyEnabled bool     `form:"notify_enabled"`
+	ID            string          `json:"id" form:"id"`
+	Address       string          `json:"address" form:"address"`
+	ChainType     string          `json:"chain_type" form:"chain_type"`
+	Name          string          `json:"name" form:"name"`
+	Symbol        string          `json:"symbol" form:"symbol"`
+	Streams       []string        `json:"streams" form:"streams"`
+	NotifyEnabled bool            `json:"notify_enabled" form:"notify_enabled"`
+	StreamNotify  map[string]bool `json:"stream_notify,omitempty" form:"stream_notify"` // Per-stream notify settings
 }
 
 // ToTokenSettings converts form data to TokenSettings
@@ -173,6 +194,19 @@ func (f *TokenFormData) ToTokenSettings() TokenSettings {
 	streams := make([]StreamType, 0, len(f.Streams))
 	for _, s := range f.Streams {
 		streams = append(streams, StreamType(s))
+	}
+
+	// Convert stream notify settings
+	streamNotify := make(map[StreamType]StreamNotifyConfig)
+	if f.StreamNotify != nil {
+		for streamStr, enabled := range f.StreamNotify {
+			streamNotify[StreamType(streamStr)] = StreamNotifyConfig{Enabled: enabled}
+		}
+	} else {
+		// Default: use global NotifyEnabled for all streams
+		for _, stream := range streams {
+			streamNotify[stream] = StreamNotifyConfig{Enabled: f.NotifyEnabled}
+		}
 	}
 
 	return TokenSettings{
@@ -183,6 +217,7 @@ func (f *TokenFormData) ToTokenSettings() TokenSettings {
 		Symbol:        f.Symbol,
 		Streams:       streams,
 		NotifyEnabled: f.NotifyEnabled,
+		StreamNotify:  streamNotify,
 	}
 }
 

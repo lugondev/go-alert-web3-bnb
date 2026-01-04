@@ -49,6 +49,7 @@ func (h *SettingsHandler) RegisterRoutes(app *fiber.App) {
 	api.Delete("/tokens/:id", h.DeleteToken)
 	api.Post("/tokens/:id/notify", h.ToggleTokenNotify)
 	api.Put("/tokens/:id/streams", h.UpdateTokenStreams)
+	api.Post("/tokens/:id/streams/:stream/notify", h.ToggleStreamNotify)
 
 	// Subscriptions
 	api.Get("/subscriptions", h.GetSubscriptions)
@@ -107,12 +108,19 @@ func (h *SettingsHandler) TokensPage(c *fiber.Ctx) error {
 
 // NewTokenPage renders the new token form
 func (h *SettingsHandler) NewTokenPage(c *fiber.Ctx) error {
+	// Use TokenListItem with string types for template compatibility
+	emptyToken := settings.TokenListItem{
+		ChainType: string(settings.ChainSolana), // Default chain
+	}
+
 	return c.Render("token_form", fiber.Map{
-		"Title":       "Add New Token",
-		"Token":       settings.TokenSettings{},
-		"ChainTypes":  getChainTypeOptions(),
-		"StreamTypes": getStreamTypeOptions(),
-		"IsNew":       true,
+		"Title":           "Add New Token",
+		"Token":           emptyToken,
+		"ChainTypes":      getChainTypeOptions(),
+		"StreamTypes":     getStreamTypeOptions(),
+		"StreamMap":       make(map[string]bool),
+		"StreamNotifyMap": make(map[string]bool),
+		"IsNew":           true,
 	})
 }
 
@@ -133,13 +141,23 @@ func (h *SettingsHandler) EditTokenPage(c *fiber.Ctx) error {
 		streamMap[string(s)] = true
 	}
 
+	// Convert stream notify to map for template
+	streamNotifyMap := make(map[string]bool)
+	for _, s := range token.Streams {
+		streamNotifyMap[string(s)] = token.IsStreamNotifyEnabled(s)
+	}
+
+	// Convert to list item for template (ChainType as string)
+	tokenData := token.ToListItem()
+
 	return c.Render("token_form", fiber.Map{
-		"Title":       "Edit Token",
-		"Token":       token,
-		"ChainTypes":  getChainTypeOptions(),
-		"StreamTypes": getStreamTypeOptions(),
-		"StreamMap":   streamMap,
-		"IsNew":       false,
+		"Title":           "Edit Token",
+		"Token":           tokenData,
+		"ChainTypes":      getChainTypeOptions(),
+		"StreamTypes":     getStreamTypeOptions(),
+		"StreamMap":       streamMap,
+		"StreamNotifyMap": streamNotifyMap,
+		"IsNew":           false,
 	})
 }
 
@@ -465,4 +483,63 @@ func getStreamTypeOptions() []StreamTypeOption {
 		{Value: string(settings.StreamTx), Label: "Transactions", Description: "Real-time transactions"},
 		{Value: string(settings.StreamKline), Label: "Kline", Description: "Candlestick data"},
 	}
+}
+
+// ToggleStreamNotify toggles notification for a specific stream of a token
+func (h *SettingsHandler) ToggleStreamNotify(c *fiber.Ctx) error {
+	ctx := c.Context()
+	tokenID := c.Params("id")
+	streamType := c.Params("stream")
+
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+
+	if err := h.service.ToggleStreamNotify(ctx, tokenID, settings.StreamType(streamType), body.Enabled); err != nil {
+		h.log.Error("failed to toggle stream notify",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+			logger.F("stream", streamType),
+		)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	h.log.Info("stream notify toggled",
+		logger.F("token_id", tokenID),
+		logger.F("stream", streamType),
+		logger.F("enabled", body.Enabled),
+	)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"enabled": body.Enabled,
+		"stream":  streamType,
+	})
+}
+
+// GetStreamNotifyStatus returns the notification status for a specific stream
+func (h *SettingsHandler) GetStreamNotifyStatus(c *fiber.Ctx) error {
+	ctx := c.Context()
+	tokenID := c.Params("id")
+	streamType := c.Params("stream")
+
+	enabled, err := h.service.GetStreamNotifyStatus(ctx, tokenID, settings.StreamType(streamType))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"enabled": enabled,
+		"stream":  streamType,
+	})
 }

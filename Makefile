@@ -23,40 +23,42 @@ all: lint test build
 
 ## Build targets
 
-build: ## Build all binaries
+build: ## Build the unified binary
 	@echo "Building $(APP_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) ./cmd/server
-	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/settings-ui ./cmd/settings
-	@echo "Build complete: $(BUILD_DIR)/"
+	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) ./cmd/app
+	@echo "Build complete: $(BUILD_DIR)/$(APP_NAME)"
 
-build-server: ## Build server only
+build-wstest: ## Build WebSocket test tool
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) ./cmd/server
-
-build-settings: ## Build settings UI only
-	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/settings-ui ./cmd/settings
+	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/wstest ./cmd/wstest
 
 build-linux: ## Build for Linux (cross-compile)
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux ./cmd/server
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/settings-ui-linux ./cmd/settings
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux ./cmd/app
 
 ## Run targets (local development)
 
-run: ## Run main server
-	$(GORUN) ./cmd/server -config configs/config.yaml
+run: ## Run with both server and UI enabled (default)
+	$(GORUN) ./cmd/app -config configs/config.local.yaml
 
-run-ui: ## Run settings UI (port 8080)
-	$(GORUN) ./cmd/settings -config configs/config.yaml
+run-reset: ## Run with both server and UI enabled (default)
+	$(GORUN) ./cmd/app -config configs/config.local.yaml -reset
 
-run-all: ## Run both server and UI in parallel (local)
-	@echo "Starting both server and UI..."
-	@trap 'kill 0' EXIT; \
-	$(GORUN) ./cmd/settings -config configs/config.yaml & \
-	$(GORUN) ./cmd/server -config configs/config.yaml & \
-	wait
+run-server: ## Run server only (no UI)
+	$(GORUN) ./cmd/app -config configs/config.yaml -server
+
+run-ui: ## Run UI only (no server)
+	$(GORUN) ./cmd/app -config configs/config.yaml -ui
+
+run-local: ## Run with local config (both enabled)
+	$(GORUN) ./cmd/app -config configs/config.local.yaml
+
+run-local-reset: ## Run with local config and reset Redis settings
+	$(GORUN) ./cmd/app -config configs/config.local.yaml -reset
+
+run-wstest: ## Run WebSocket test tool
+	$(GORUN) ./cmd/wstest
 
 ## Test targets
 
@@ -112,6 +114,15 @@ help: ## Show this help
 	@echo "$(APP_NAME) - Development Commands"
 	@echo ""
 	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Flags for the application:"
+	@echo "  -server      Enable WebSocket alert server"
+	@echo "  -ui          Enable settings web UI"
+	@echo "  -port        Web UI port (default: 8080)"
+	@echo "  -reset       Reset all settings in Redis"
+	@echo "  -debug       Enable debug mode"
+	@echo ""
+	@echo "Note: If no -server or -ui flag is specified, both are enabled by default."
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 	@echo ""

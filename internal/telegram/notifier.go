@@ -19,6 +19,15 @@ var (
 	ErrSendFailed  = errors.New("failed to send telegram message")
 )
 
+// TickerData interface for ticker cache data to avoid circular import
+type TickerData interface {
+	GetPrice() float64
+	GetMarketCap() float64
+	GetVolume24h() float64
+	GetPriceChange24h() float64
+	GetLiquidity() float64
+}
+
 const (
 	telegramAPIURL = "https://api.telegram.org/bot%s/sendMessage"
 )
@@ -226,7 +235,7 @@ func NewFormatter() *Formatter {
 	return &Formatter{}
 }
 
-// FormatTransaction formats a transaction event for Telegram
+// FormatTransaction formats a transaction event for Telegram (legacy format)
 func (f *Formatter) FormatTransaction(hash, from, to, value, symbol string, amount float64) string {
 	return fmt.Sprintf(`🔄 *Transaction Alert*
 
@@ -243,6 +252,98 @@ func (f *Formatter) FormatTransaction(hash, from, to, value, symbol string, amou
 		value,
 		symbol,
 		amount,
+		time.Now().Format(time.RFC3339),
+	)
+}
+
+// FormatW3WTransaction formats a W3W transaction event for Telegram with Solscan link
+func (f *Formatter) FormatW3WTransaction(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol string, amount0, amount1, valueUSD, token0Price, token1Price float64, platformID int) string {
+	return f.FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol, amount0, amount1, valueUSD, token0Price, token1Price, platformID, nil)
+}
+
+// FormatW3WTransactionWithTicker formats a W3W transaction event with optional ticker data
+func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol string, amount0, amount1, valueUSD, token0Price, token1Price float64, platformID int, tickerData TickerData) string {
+	// Determine emoji based on transaction type
+	emoji := "🔄"
+	typeLabel := "Swap"
+	switch txType {
+	case "buy":
+		emoji = "🟢"
+		typeLabel = "Buy"
+	case "sell":
+		emoji = "🔴"
+		typeLabel = "Sell"
+	}
+
+	// Build explorer link based on platform
+	var explorerLink string
+	var explorerName string
+	switch platformID {
+	case 16: // Solana
+		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+		explorerName = "Solscan"
+	case 1: // Ethereum
+		explorerLink = fmt.Sprintf("https://etherscan.io/tx/%s", txHash)
+		explorerName = "Etherscan"
+	case 56: // BSC
+		explorerLink = fmt.Sprintf("https://bscscan.com/tx/%s", txHash)
+		explorerName = "BscScan"
+	default:
+		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+		explorerName = "Explorer"
+	}
+
+	// Build ticker info section if available
+	tickerInfo := ""
+	if tickerData != nil {
+		priceChangeEmoji := "📈"
+		if tickerData.GetPriceChange24h() < 0 {
+			priceChangeEmoji = "📉"
+		}
+
+		tickerInfo = fmt.Sprintf(`
+
+📊 *Token Stats*
+*Price:* $%s
+*24h Change:* %s %.2f%%
+*Market Cap:* $%s
+*Volume 24h:* $%s
+*Liquidity:* $%s`,
+			formatPriceCompact(tickerData.GetPrice()),
+			priceChangeEmoji,
+			tickerData.GetPriceChange24h(),
+			formatLargeNumber(tickerData.GetMarketCap()),
+			formatLargeNumber(tickerData.GetVolume24h()),
+			formatLargeNumber(tickerData.GetLiquidity()),
+		)
+	}
+
+	return fmt.Sprintf(`%s *%s Transaction*
+
+*Value:* $%.2f
+
+*%s:* %.6f
+*%s:* %.6f
+
+*%s Price:* $%.6f
+*%s Price:* $%.6f%s
+
+[View on %s](%s)
+*Time:* %s`,
+		emoji,
+		typeLabel,
+		valueUSD,
+		token0Symbol,
+		amount0,
+		token1Symbol,
+		amount1,
+		token0Symbol,
+		token0Price,
+		token1Symbol,
+		token1Price,
+		tickerInfo,
+		explorerName,
+		explorerLink,
 		time.Now().Format(time.RFC3339),
 	)
 }
@@ -451,4 +552,18 @@ func formatNumber(n int64) string {
 		return fmt.Sprintf("%.2fK", float64(n)/1e3)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// formatPriceCompact formats a price with appropriate precision
+func formatPriceCompact(price float64) string {
+	if price >= 1000 {
+		return fmt.Sprintf("%.2f", price)
+	}
+	if price >= 1 {
+		return fmt.Sprintf("%.4f", price)
+	}
+	if price >= 0.0001 {
+		return fmt.Sprintf("%.6f", price)
+	}
+	return fmt.Sprintf("%.10f", price)
 }

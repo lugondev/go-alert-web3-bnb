@@ -43,6 +43,7 @@ type Application struct {
 	deduplicator *intRedis.Deduplicator
 	rateLimiter  *intRedis.RateLimiter
 	pubsub       *intRedis.PubSub
+	tickerCache  *intRedis.TickerCache
 	notifier     *telegram.Notifier
 	eventHandler *handler.EventHandler
 	wsClient     *websocket.Client
@@ -231,6 +232,9 @@ func (app *Application) initializeServer(ctx context.Context) error {
 		)
 	})
 
+	// Initialize ticker cache
+	app.tickerCache = intRedis.NewTickerCache(redisClient.GetClient(), log)
+
 	// Initialize Telegram notifier
 	app.notifier = telegram.NewNotifier(telegram.Config{
 		BotToken:   cfg.Telegram.BotToken,
@@ -255,6 +259,8 @@ func (app *Application) initializeServer(ctx context.Context) error {
 		app.deduplicator,
 		app.rateLimiter,
 		app.pubsub,
+		app.tickerCache,
+		app.settingsSvc,
 		log,
 		handler.Config{
 			QueueSize:       100,
@@ -404,55 +410,73 @@ func (app *Application) heartbeatLoop(ctx context.Context) {
 func (app *Application) shutdown(ctx context.Context, cancel context.CancelFunc) {
 	app.log.Info("starting graceful shutdown")
 
-	// Create shutdown context with timeout
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Cancel main context first to stop all goroutines
+	cancel()
+
+	// Create shutdown context with short timeout (5 seconds)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
-	// Send shutdown notification if server is enabled
-	if app.enableServer && app.cfg.IsTelegramEnabled() && app.notifier != nil {
-		formatter := telegram.NewFormatter()
-		instanceID := ""
-		if app.deduplicator != nil {
-			instanceID = app.deduplicator.GetInstanceID()
-			if len(instanceID) > 8 {
-				instanceID = instanceID[:8]
-			}
-		}
-		shutdownMsg := formatter.FormatAlert("warning", "Application Stopping",
-			fmt.Sprintf("Web3 Alert Bot shutting down.\nInstance: %s...", instanceID))
-		if err := app.notifier.SendMarkdown(shutdownCtx, shutdownMsg); err != nil {
-			app.log.Warn("failed to send shutdown notification", logger.F("error", err))
-		}
-	}
+	// Use WaitGroup to track shutdown tasks
+	var wg sync.WaitGroup
 
-	// Cancel main context
-	cancel()
+	// Send shutdown notification async (non-blocking)
+	if app.enableServer && app.cfg.IsTelegramEnabled() && app.notifier != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			notifyCtx, notifyCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer notifyCancel()
+
+			formatter := telegram.NewFormatter()
+			instanceID := ""
+			if app.deduplicator != nil {
+				instanceID = app.deduplicator.GetInstanceID()
+				if len(instanceID) > 8 {
+					instanceID = instanceID[:8]
+				}
+			}
+			shutdownMsg := formatter.FormatAlert("warning", "Application Stopping",
+				fmt.Sprintf("Web3 Alert Bot shutting down.\nInstance: %s...", instanceID))
+			if err := app.notifier.SendMarkdown(notifyCtx, shutdownMsg); err != nil {
+				app.log.Warn("failed to send shutdown notification", logger.F("error", err))
+			}
+		}()
+	}
 
 	// Shutdown web server
 	if app.webServer != nil {
-		if err := app.webServer.Shutdown(shutdownCtx); err != nil {
-			app.log.Error("error shutting down web server", logger.F("error", err))
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := app.webServer.Shutdown(shutdownCtx); err != nil {
+				app.log.Error("error shutting down web server", logger.F("error", err))
+			}
+		}()
 	}
 
 	// Shutdown server components
 	if app.enableServer {
+		// Close WebSocket first (stops incoming events)
 		if app.wsClient != nil {
 			if err := app.wsClient.Close(); err != nil {
 				app.log.Error("error closing websocket", logger.F("error", err))
 			}
 		}
 
+		// Stop event handler (drain queue)
 		if app.eventHandler != nil {
 			app.eventHandler.Stop()
 		}
 
+		// Close pubsub
 		if app.pubsub != nil {
 			if err := app.pubsub.Close(); err != nil {
 				app.log.Error("error closing pubsub", logger.F("error", err))
 			}
 		}
 
+		// Close Redis client
 		if app.redisClient != nil {
 			if err := app.redisClient.Close(); err != nil {
 				app.log.Error("error closing redis client", logger.F("error", err))
@@ -467,7 +491,19 @@ func (app *Application) shutdown(ctx context.Context, cancel context.CancelFunc)
 		}
 	}
 
-	app.log.Info("graceful shutdown completed")
+	// Wait for async tasks with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		app.log.Info("graceful shutdown completed")
+	case <-time.After(3 * time.Second):
+		app.log.Warn("shutdown timeout, forcing exit")
+	}
 }
 
 // initLogger initializes the logger based on configuration
