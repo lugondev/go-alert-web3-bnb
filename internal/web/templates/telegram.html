@@ -1,0 +1,184 @@
+<div class="px-4 py-6 sm:px-0">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-white">Telegram Settings</h1>
+        <p class="mt-2 text-gray-400">Configure your Telegram bot for notifications</p>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <form id="telegram-form">
+            <div id="form-alert"></div>
+
+            <div class="grid grid-cols-1 gap-6">
+                <!-- Bot Token -->
+                <div>
+                    <label for="bot_token" class="block text-sm font-medium text-gray-300 mb-2">
+                        Bot Token
+                    </label>
+                    <input
+                        type="password"
+                        name="bot_token"
+                        id="bot_token"
+                        value="{{.Telegram.BotToken}}"
+                        placeholder="Enter your Telegram bot token"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                    >
+                    <p class="mt-2 text-sm text-gray-400">
+                        Get your bot token from <a href="https://t.me/BotFather" target="_blank" class="text-indigo-400 hover:text-indigo-300">@BotFather</a>
+                    </p>
+                </div>
+
+                <!-- Chat ID -->
+                <div>
+                    <label for="chat_id" class="block text-sm font-medium text-gray-300 mb-2">
+                        Chat ID
+                    </label>
+                    <input
+                        type="text"
+                        name="chat_id"
+                        id="chat_id"
+                        value="{{.Telegram.ChatID}}"
+                        placeholder="Enter your Telegram chat ID"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                    >
+                    <p class="mt-2 text-sm text-gray-400">
+                        Get your chat ID from <a href="https://t.me/userinfobot" target="_blank" class="text-indigo-400 hover:text-indigo-300">@userinfobot</a>
+                    </p>
+                </div>
+
+                <!-- Rate Limit -->
+                <div>
+                    <label for="rate_limit" class="block text-sm font-medium text-gray-300 mb-2">
+                        Rate Limit (messages per minute)
+                    </label>
+                    <input
+                        type="number"
+                        name="rate_limit"
+                        id="rate_limit"
+                        value="{{.Telegram.RateLimit}}"
+                        min="1"
+                        max="60"
+                        placeholder="30"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                </div>
+
+                <!-- Enabled Toggle -->
+                <div>
+                    <label class="flex items-center">
+                        <input
+                            type="checkbox"
+                            name="enabled"
+                            id="enabled"
+                            {{if .Telegram.Enabled}}checked{{end}}
+                            class="h-4 w-4 text-indigo-600 bg-gray-700 border-gray-500 rounded focus:ring-indigo-500"
+                        >
+                        <span class="ml-3 text-sm text-gray-300">Enable Telegram notifications</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mt-8 flex items-center justify-between">
+                <button
+                    type="button"
+                    onclick="testTelegram()"
+                    class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                    Send Test Message
+                </button>
+                <button
+                    type="submit"
+                    class="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                    Save Settings
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Help Section -->
+    <div class="mt-8 bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-white mb-4">Setup Guide</h2>
+        <ol class="list-decimal list-inside space-y-3 text-gray-300">
+            <li>
+                Open Telegram and search for <span class="text-indigo-400">@BotFather</span>
+            </li>
+            <li>
+                Send <code class="bg-gray-700 px-2 py-0.5 rounded">/newbot</code> and follow the instructions
+            </li>
+            <li>
+                Copy the bot token and paste it above
+            </li>
+            <li>
+                Start a chat with your new bot
+            </li>
+            <li>
+                Get your Chat ID from <span class="text-indigo-400">@userinfobot</span> or use the Telegram API
+            </li>
+            <li>
+                Enable notifications and save settings
+            </li>
+        </ol>
+    </div>
+</div>
+
+<script>
+document.getElementById('telegram-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    
+    const data = {
+        bot_token: form.bot_token.value,
+        chat_id: form.chat_id.value,
+        rate_limit: parseInt(form.rate_limit.value) || 30,
+        enabled: form.enabled.checked
+    };
+    
+    fetch('/api/telegram', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(result => {
+        if (result.error) {
+            showAlert('error', result.error);
+        } else {
+            showAlert('success', 'Settings saved successfully');
+        }
+    })
+    .catch(err => {
+        showAlert('error', 'Failed to save settings');
+    });
+});
+
+function testTelegram() {
+    fetch('/api/telegram/test', { method: 'POST' })
+        .then(res => res.json())
+        .then(result => {
+            if (result.error) {
+                showAlert('error', result.error);
+            } else {
+                showAlert('success', 'Test message sent successfully');
+            }
+        })
+        .catch(err => {
+            showAlert('error', 'Failed to send test message');
+        });
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.getElementById('form-alert');
+    alertDiv.innerHTML = `
+        <div class="mb-4 p-4 rounded-md ${type === 'error' ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}">
+            ${message}
+        </div>
+    `;
+    
+    setTimeout(() => {
+        alertDiv.innerHTML = '';
+    }, 5000);
+}
+</script>

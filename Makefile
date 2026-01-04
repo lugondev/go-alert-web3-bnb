@@ -1,10 +1,10 @@
-.PHONY: build run test clean lint fmt tidy docker-build docker-run
+.PHONY: build run test clean lint fmt tidy help
 
 # Application info
 APP_NAME := go-alert-web3-bnb
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+LDFLAGS := -ldflags "-w -s -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # Go commands
 GOCMD := go
@@ -17,139 +17,102 @@ GOFMT := gofmt
 
 # Build directory
 BUILD_DIR := ./bin
-MAIN_PATH := ./cmd/server
 
 # Default target
 all: lint test build
 
-# Build the application
-build:
+## Build targets
+
+build: ## Build all binaries
 	@echo "Building $(APP_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) $(MAIN_PATH)
-	@echo "Build complete: $(BUILD_DIR)/$(APP_NAME)"
+	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) ./cmd/server
+	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/settings-ui ./cmd/settings
+	@echo "Build complete: $(BUILD_DIR)/"
 
-# Build for Linux (useful for Docker)
-build-linux:
-	@echo "Building $(APP_NAME) for Linux..."
+build-server: ## Build server only
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux $(MAIN_PATH)
-	@echo "Build complete: $(BUILD_DIR)/$(APP_NAME)-linux"
+	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) ./cmd/server
 
-# Run the application
-run:
-	@echo "Running $(APP_NAME)..."
-	$(GORUN) $(MAIN_PATH)/main.go
+build-settings: ## Build settings UI only
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/settings-ui ./cmd/settings
 
-# Run with custom config
-run-config:
-	@echo "Running $(APP_NAME) with config..."
-	$(GORUN) $(MAIN_PATH)/main.go -config=$(CONFIG)
+build-linux: ## Build for Linux (cross-compile)
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux ./cmd/server
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/settings-ui-linux ./cmd/settings
 
-# Run tests
-test:
-	@echo "Running tests..."
-	$(GOTEST) -v -race -cover ./...
+## Run targets (local development)
 
-# Run tests with coverage report
-test-coverage:
-	@echo "Running tests with coverage..."
+run: ## Run main server
+	$(GORUN) ./cmd/server -config configs/config.yaml
+
+run-ui: ## Run settings UI (port 8080)
+	$(GORUN) ./cmd/settings -config configs/config.yaml
+
+run-all: ## Run both server and UI in parallel (local)
+	@echo "Starting both server and UI..."
+	@trap 'kill 0' EXIT; \
+	$(GORUN) ./cmd/settings -config configs/config.yaml & \
+	$(GORUN) ./cmd/server -config configs/config.yaml & \
+	wait
+
+## Test targets
+
+test: ## Run tests
+	$(GOTEST) -v -race ./...
+
+test-short: ## Run tests (short mode)
+	$(GOTEST) -v -short ./...
+
+test-cover: ## Run tests with coverage
 	$(GOTEST) -v -race -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
-# Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	$(GOCLEAN)
-	rm -rf $(BUILD_DIR)
-	rm -f coverage.out coverage.html
-	@echo "Clean complete"
+## Code quality
 
-# Run linter
-lint:
-	@echo "Running linter..."
+lint: ## Run linter
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
-		echo "golangci-lint not installed. Installing..."; \
+		echo "Installing golangci-lint..."; \
 		go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
 		golangci-lint run ./...; \
 	fi
 
-# Format code
-fmt:
-	@echo "Formatting code..."
+fmt: ## Format code
 	$(GOFMT) -s -w .
-	@echo "Formatting complete"
 
-# Tidy dependencies
-tidy:
-	@echo "Tidying dependencies..."
+vet: ## Run go vet
+	$(GOCMD) vet ./...
+
+## Dependencies
+
+tidy: ## Tidy dependencies
 	$(GOMOD) tidy
-	@echo "Tidy complete"
 
-# Download dependencies
-deps:
-	@echo "Downloading dependencies..."
+deps: ## Download dependencies
 	$(GOMOD) download
-	@echo "Dependencies downloaded"
 
-# Verify dependencies
-verify:
-	@echo "Verifying dependencies..."
+verify: ## Verify dependencies
 	$(GOMOD) verify
-	@echo "Dependencies verified"
 
-# Docker build
-docker-build:
-	@echo "Building Docker image..."
-	docker build -t $(APP_NAME):$(VERSION) .
-	docker tag $(APP_NAME):$(VERSION) $(APP_NAME):latest
-	@echo "Docker image built: $(APP_NAME):$(VERSION)"
+## Cleanup
 
-# Docker run
-docker-run:
-	@echo "Running Docker container..."
-	docker run --rm \
-		--name $(APP_NAME) \
-		--env-file .env \
-		$(APP_NAME):latest
+clean: ## Clean build artifacts
+	$(GOCLEAN)
+	rm -rf $(BUILD_DIR)
+	rm -f coverage.out coverage.html
 
-# Docker compose up
-docker-up:
-	docker-compose up -d
+## Help
 
-# Docker compose down
-docker-down:
-	docker-compose down
-
-# Generate mocks (requires mockgen)
-mocks:
-	@echo "Generating mocks..."
-	@if command -v mockgen >/dev/null 2>&1; then \
-		go generate ./...; \
-	else \
-		echo "mockgen not installed. Installing..."; \
-		go install github.com/golang/mock/mockgen@latest; \
-		go generate ./...; \
-	fi
-
-# Show help
-help:
-	@echo "Available targets:"
-	@echo "  build         - Build the application"
-	@echo "  build-linux   - Build for Linux"
-	@echo "  run           - Run the application"
-	@echo "  test          - Run tests"
-	@echo "  test-coverage - Run tests with coverage"
-	@echo "  clean         - Clean build artifacts"
-	@echo "  lint          - Run linter"
-	@echo "  fmt           - Format code"
-	@echo "  tidy          - Tidy dependencies"
-	@echo "  deps          - Download dependencies"
-	@echo "  docker-build  - Build Docker image"
-	@echo "  docker-run    - Run Docker container"
-	@echo "  docker-up     - Start with docker-compose"
-	@echo "  docker-down   - Stop docker-compose"
-	@echo "  help          - Show this help"
+help: ## Show this help
+	@echo "$(APP_NAME) - Development Commands"
+	@echo ""
+	@echo "Usage: make [target]"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "For Docker/deployment operations, use: ./deploy.sh help"

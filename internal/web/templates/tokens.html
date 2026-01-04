@@ -1,0 +1,119 @@
+<div class="px-4 py-6 sm:px-0">
+    <div class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-white">Token Management</h1>
+            <p class="mt-2 text-gray-400">Configure tokens to monitor</p>
+        </div>
+        <a href="/tokens/new" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+            <span class="flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                </svg>
+                Add Token
+            </span>
+        </a>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg border border-gray-700">
+        {{if .Tokens}}
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-750">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Token</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Chain</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Address</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Streams</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notify</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700" id="token-list">
+                    {{range .Tokens}}
+                    <tr class="hover:bg-gray-750" id="token-row-{{.ID}}">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-medium text-white">
+                                {{if .Name}}{{.Name}}{{else}}-{{end}}
+                            </div>
+                            {{if .Symbol}}
+                            <div class="text-xs text-gray-400">{{.Symbol}}</div>
+                            {{end}}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 py-1 text-xs rounded-full 
+                                {{if eq .ChainType "CT_501"}}bg-purple-900 text-purple-300
+                                {{else if eq .ChainType "56"}}bg-yellow-900 text-yellow-300
+                                {{else}}bg-blue-900 text-blue-300{{end}}">
+                                {{.ChainName}}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <code class="text-xs text-gray-400 bg-gray-900 px-2 py-1 rounded">{{.Address}}</code>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex flex-wrap gap-1">
+                                {{range .Streams}}
+                                <span class="px-2 py-0.5 text-xs bg-gray-700 text-gray-300 rounded">{{.}}</span>
+                                {{end}}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <button 
+                                onclick="toggleNotify('{{.ID}}', {{if .NotifyEnabled}}false{{else}}true{{end}})"
+                                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {{if .NotifyEnabled}}bg-indigo-600{{else}}bg-gray-600{{end}}"
+                            >
+                                <span class="translate-x-0 pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .NotifyEnabled}}translate-x-5{{end}}"></span>
+                            </button>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+                            <a href="/tokens/{{.ID}}" class="text-indigo-400 hover:text-indigo-300 mr-3">Edit</a>
+                            <button onclick="deleteToken('{{.ID}}')" class="text-red-400 hover:text-red-300">Delete</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="px-6 py-12 text-center">
+            <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <p class="mt-4 text-gray-400">No tokens configured yet</p>
+            <a href="/tokens/new" class="mt-4 inline-block px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                Add your first token
+            </a>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<script>
+function deleteToken(id) {
+    if (!confirm('Are you sure you want to delete this token?')) return;
+    
+    fetch('/api/tokens/' + id, { method: 'DELETE' })
+        .then(res => {
+            if (res.ok) {
+                document.getElementById('token-row-' + id).remove();
+            } else {
+                alert('Failed to delete token');
+            }
+        });
+}
+
+function toggleNotify(id, enabled) {
+    fetch('/api/tokens/' + id + '/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled })
+    })
+    .then(res => {
+        if (res.ok) {
+            location.reload();
+        } else {
+            alert('Failed to update notification setting');
+        }
+    });
+}
+</script>

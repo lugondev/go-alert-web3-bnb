@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 # Install necessary packages
 RUN apk add --no-cache git ca-certificates tzdata
@@ -16,11 +16,11 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the unified application
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s" \
-    -o /app/bin/go-alert-web3-bnb \
-    ./cmd/server
+    -o /app/bin/go-alert \
+    .
 
 # Final stage
 FROM alpine:3.19
@@ -36,10 +36,14 @@ RUN addgroup -g 1000 appgroup && \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/bin/go-alert-web3-bnb .
+COPY --from=builder /app/bin/go-alert .
 
 # Copy config files
 COPY --from=builder /app/configs ./configs
+
+# Copy web templates and static files
+COPY --from=builder /app/internal/web/templates ./templates
+COPY --from=builder /app/internal/web/static ./static
 
 # Set ownership
 RUN chown -R appuser:appgroup /app
@@ -47,11 +51,18 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-# Expose port (if needed for health checks)
+# Expose port for web UI
 EXPOSE 8080
 
-# Set entrypoint
-ENTRYPOINT ["./go-alert-web3-bnb"]
+# Environment variables
+ENV WEB_PORT=8080
+ENV TEMPLATES_DIR=/app/templates
+ENV STATIC_DIR=/app/static
+ENV ENABLE_UI=true
+ENV ENABLE_SERVER=true
 
-# Default command arguments
+# Set entrypoint
+ENTRYPOINT ["./go-alert"]
+
+# Default command arguments (both UI and server enabled)
 CMD ["-config", "configs/config.yaml"]
