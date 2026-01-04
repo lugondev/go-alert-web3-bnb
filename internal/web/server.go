@@ -17,10 +17,11 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	app     *fiber.App
-	service *settings.Service
-	log     logger.Logger
-	port    int
+	app             *fiber.App
+	service         *settings.Service
+	log             logger.Logger
+	port            int
+	settingsHandler *handlers.SettingsHandler
 }
 
 // Config holds server configuration
@@ -97,6 +98,7 @@ func NewServer(cfg Config, service *settings.Service, log logger.Logger) *Server
 	// Register routes
 	settingsHandler := handlers.NewSettingsHandler(service, log)
 	settingsHandler.RegisterRoutes(app)
+	server.settingsHandler = settingsHandler
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -113,6 +115,13 @@ func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
 	s.log.Info("starting web server", logger.F("port", s.port))
 	return s.app.Listen(addr)
+}
+
+// SetSubscriptionSyncer sets the subscription syncer for the settings handler
+func (s *Server) SetSubscriptionSyncer(syncer handlers.SubscriptionSyncer) {
+	if s.settingsHandler != nil {
+		s.settingsHandler.SetSubscriptionSyncer(syncer)
+	}
 }
 
 // Shutdown gracefully shuts down the server

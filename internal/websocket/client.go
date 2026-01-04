@@ -47,6 +47,10 @@ type Client struct {
 	done         chan struct{}
 	reconnecting bool
 	pingID       uint64 // Auto-incrementing ping ID
+
+	// Track subscribed channels for unsubscribe on close
+	subscribedChannels []string
+	channelsMu         sync.RWMutex
 }
 
 // NewClient creates a new WebSocket client
@@ -415,21 +419,140 @@ func (c *Client) Subscribe(ctx context.Context, channels []string) error {
 		"params": channels,
 		"id":     time.Now().UnixNano(),
 	}
-	return c.Send(ctx, msg)
+
+	if err := c.Send(ctx, msg); err != nil {
+		return err
+	}
+
+	// Track subscribed channels
+	c.channelsMu.Lock()
+	c.subscribedChannels = append(c.subscribedChannels, channels...)
+	c.channelsMu.Unlock()
+
+	c.log.Debug("channels subscribed",
+		logger.F("channels", channels),
+		logger.F("count", len(channels)),
+	)
+
+	return nil
 }
 
 // Unsubscribe sends an unsubscription message
 func (c *Client) Unsubscribe(ctx context.Context, channels []string) error {
+	if len(channels) == 0 {
+		return nil
+	}
+
 	msg := map[string]interface{}{
 		"method": "UNSUBSCRIBE",
 		"params": channels,
 		"id":     time.Now().UnixNano(),
 	}
-	return c.Send(ctx, msg)
+
+	if err := c.Send(ctx, msg); err != nil {
+		return err
+	}
+
+	// Remove from tracked channels
+	c.channelsMu.Lock()
+	remaining := make([]string, 0, len(c.subscribedChannels))
+	unsubSet := make(map[string]bool, len(channels))
+	for _, ch := range channels {
+		unsubSet[ch] = true
+	}
+	for _, ch := range c.subscribedChannels {
+		if !unsubSet[ch] {
+			remaining = append(remaining, ch)
+		}
+	}
+	c.subscribedChannels = remaining
+	c.channelsMu.Unlock()
+
+	c.log.Debug("channels unsubscribed",
+		logger.F("channels", channels),
+		logger.F("count", len(channels)),
+	)
+
+	return nil
 }
 
-// Close closes the WebSocket connection
+// UnsubscribeAll unsubscribes from all tracked channels
+func (c *Client) UnsubscribeAll(ctx context.Context) error {
+	c.channelsMu.RLock()
+	channels := make([]string, len(c.subscribedChannels))
+	copy(channels, c.subscribedChannels)
+	c.channelsMu.RUnlock()
+
+	if len(channels) == 0 {
+		c.log.Debug("no channels to unsubscribe")
+		return nil
+	}
+
+	c.log.Info("unsubscribing from all channels",
+		logger.F("channels", channels),
+		logger.F("count", len(channels)),
+	)
+
+	return c.Unsubscribe(ctx, channels)
+}
+
+// GetSubscribedChannels returns a copy of currently subscribed channels
+func (c *Client) GetSubscribedChannels() []string {
+	c.channelsMu.RLock()
+	defer c.channelsMu.RUnlock()
+
+	channels := make([]string, len(c.subscribedChannels))
+	copy(channels, c.subscribedChannels)
+	return channels
+}
+
+// Close closes the WebSocket connection gracefully
+// It unsubscribes from all channels before closing
 func (c *Client) Close() error {
+	// Unsubscribe from all channels before closing
+	c.channelsMu.RLock()
+	channels := make([]string, len(c.subscribedChannels))
+	copy(channels, c.subscribedChannels)
+	c.channelsMu.RUnlock()
+
+	if len(channels) > 0 {
+		c.mu.RLock()
+		conn := c.conn
+		isConnected := c.isConnected
+		c.mu.RUnlock()
+
+		if isConnected && conn != nil {
+			c.log.Info("unsubscribing from all channels before close",
+				logger.F("channels", channels),
+				logger.F("count", len(channels)),
+			)
+
+			// Create unsubscribe message
+			msg := map[string]interface{}{
+				"method": "UNSUBSCRIBE",
+				"params": channels,
+				"id":     time.Now().UnixNano(),
+			}
+
+			msgBytes, err := json.Marshal(msg)
+			if err == nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
+				if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+					c.log.Warn("failed to send unsubscribe message",
+						logger.F("error", err),
+					)
+				} else {
+					c.log.Info("unsubscribe message sent successfully")
+				}
+			}
+		}
+
+		// Clear tracked channels
+		c.channelsMu.Lock()
+		c.subscribedChannels = nil
+		c.channelsMu.Unlock()
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

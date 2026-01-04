@@ -11,18 +11,34 @@ import (
 	"github.com/lugondev/go-alert-web3-bnb/internal/telegram"
 )
 
+// SubscriptionSyncer is an interface for syncing subscriptions
+type SubscriptionSyncer interface {
+	SyncSubscriptions(ctx context.Context) error
+	UnsubscribeStream(ctx context.Context, tokenAddress string, chainType settings.ChainType, streamType settings.StreamType) error
+	SubscribeStream(ctx context.Context, tokenAddress string, chainType settings.ChainType, streamType settings.StreamType) error
+	UnsubscribeToken(ctx context.Context, tokenAddress string, chainType settings.ChainType) error
+}
+
 // SettingsHandler handles HTTP requests for settings
 type SettingsHandler struct {
-	service *settings.Service
-	log     logger.Logger
+	service   *settings.Service
+	log       logger.Logger
+	subSyncer SubscriptionSyncer
 }
 
 // NewSettingsHandler creates a new settings handler
 func NewSettingsHandler(service *settings.Service, log logger.Logger) *SettingsHandler {
 	return &SettingsHandler{
-		service: service,
-		log:     log.With(logger.F("component", "settings-handler")),
+		service:   service,
+		log:       log.With(logger.F("component", "settings-handler")),
+		subSyncer: nil, // Will be set later via SetSubscriptionSyncer
 	}
+}
+
+// SetSubscriptionSyncer sets the subscription syncer for managing WebSocket subscriptions
+func (h *SettingsHandler) SetSubscriptionSyncer(syncer SubscriptionSyncer) {
+	h.subSyncer = syncer
+	h.log.Info("subscription syncer set")
 }
 
 // RegisterRoutes registers all settings routes
@@ -382,6 +398,24 @@ func (h *SettingsHandler) CreateToken(c *fiber.Ctx) error {
 		})
 	}
 
+	h.log.Info("token created",
+		logger.F("token_address", token.Address),
+		logger.F("chain_type", token.ChainType),
+		logger.F("streams", token.Streams),
+	)
+
+	// Subscribe to token streams if syncer is available and notify is enabled
+	if h.subSyncer != nil && token.NotifyEnabled {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := h.subSyncer.SyncSubscriptions(syncCtx); err != nil {
+			h.log.Warn("failed to sync subscriptions after token create",
+				logger.F("error", err),
+			)
+		}
+	}
+
 	// Check if this is an HTMX request
 	if c.Get("HX-Request") == "true" {
 		c.Set("HX-Redirect", "/tokens")
@@ -424,6 +458,24 @@ func (h *SettingsHandler) UpdateToken(c *fiber.Ctx) error {
 		})
 	}
 
+	h.log.Info("token updated",
+		logger.F("token_id", tokenID),
+		logger.F("token_address", token.Address),
+		logger.F("streams", token.Streams),
+	)
+
+	// Sync subscriptions after update (streams may have changed)
+	if h.subSyncer != nil {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := h.subSyncer.SyncSubscriptions(syncCtx); err != nil {
+			h.log.Warn("failed to sync subscriptions after token update",
+				logger.F("error", err),
+			)
+		}
+	}
+
 	if c.Get("HX-Request") == "true" {
 		c.Set("HX-Redirect", "/tokens")
 		return c.SendStatus(fiber.StatusOK)
@@ -440,10 +492,37 @@ func (h *SettingsHandler) DeleteToken(c *fiber.Ctx) error {
 	ctx := c.Context()
 	tokenID := c.Params("id")
 
+	// Get token info before delete for subscription management
+	token, err := h.service.GetToken(ctx, tokenID)
+	if err != nil {
+		h.log.Warn("failed to get token before delete",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+		)
+		// Continue with delete even if we can't get token info
+	}
+
 	if err := h.service.DeleteToken(ctx, tokenID); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	h.log.Info("token deleted",
+		logger.F("token_id", tokenID),
+	)
+
+	// Unsubscribe from all token streams if syncer is available
+	if h.subSyncer != nil && token != nil {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := h.subSyncer.UnsubscribeToken(syncCtx, token.Address, token.ChainType); err != nil {
+			h.log.Warn("failed to unsubscribe token streams after delete",
+				logger.F("error", err),
+				logger.F("token", token.Address),
+			)
+		}
 	}
 
 	if c.Get("HX-Request") == "true" {
@@ -471,10 +550,51 @@ func (h *SettingsHandler) ToggleTokenNotify(c *fiber.Ctx) error {
 		})
 	}
 
+	// Get token info before toggle for subscription management
+	token, err := h.service.GetToken(ctx, tokenID)
+	if err != nil {
+		h.log.Error("failed to get token for notify toggle",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+		)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
 	if err := h.service.ToggleTokenNotify(ctx, tokenID, body.Enabled); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	h.log.Info("token notify toggled",
+		logger.F("token_id", tokenID),
+		logger.F("token_address", token.Address),
+		logger.F("enabled", body.Enabled),
+	)
+
+	// Sync WebSocket subscriptions if syncer is available
+	if h.subSyncer != nil {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if !body.Enabled {
+			// When disabling token notify, unsubscribe all its streams
+			if err := h.subSyncer.UnsubscribeToken(syncCtx, token.Address, token.ChainType); err != nil {
+				h.log.Warn("failed to unsubscribe token streams after disable",
+					logger.F("error", err),
+					logger.F("token", token.Address),
+				)
+			}
+		} else {
+			// When enabling, sync to subscribe active streams
+			if err := h.subSyncer.SyncSubscriptions(syncCtx); err != nil {
+				h.log.Warn("failed to sync subscriptions after enable",
+					logger.F("error", err),
+				)
+			}
+		}
 	}
 
 	return c.JSON(fiber.Map{
@@ -580,6 +700,18 @@ func (h *SettingsHandler) ToggleStreamNotify(c *fiber.Ctx) error {
 		})
 	}
 
+	// Get token info before toggle for subscription management
+	token, err := h.service.GetToken(ctx, tokenID)
+	if err != nil {
+		h.log.Error("failed to get token for stream toggle",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+		)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
 	if err := h.service.ToggleStreamNotify(ctx, tokenID, settings.StreamType(streamType), body.Enabled); err != nil {
 		h.log.Error("failed to toggle stream notify",
 			logger.F("error", err),
@@ -596,6 +728,32 @@ func (h *SettingsHandler) ToggleStreamNotify(c *fiber.Ctx) error {
 		logger.F("stream", streamType),
 		logger.F("enabled", body.Enabled),
 	)
+
+	// Sync WebSocket subscriptions if syncer is available
+	if h.subSyncer != nil {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if body.Enabled {
+			// Subscribe to the stream
+			if err := h.subSyncer.SubscribeStream(syncCtx, token.Address, token.ChainType, settings.StreamType(streamType)); err != nil {
+				h.log.Warn("failed to subscribe stream after enable",
+					logger.F("error", err),
+					logger.F("token", token.Address),
+					logger.F("stream", streamType),
+				)
+			}
+		} else {
+			// Unsubscribe from the stream
+			if err := h.subSyncer.UnsubscribeStream(syncCtx, token.Address, token.ChainType, settings.StreamType(streamType)); err != nil {
+				h.log.Warn("failed to unsubscribe stream after disable",
+					logger.F("error", err),
+					logger.F("token", token.Address),
+					logger.F("stream", streamType),
+				)
+			}
+		}
+	}
 
 	return c.JSON(fiber.Map{
 		"success": true,

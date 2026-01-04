@@ -49,6 +49,7 @@ type Application struct {
 	wsClient     *websocket.Client
 	webServer    *web.Server
 	settingsSvc  *settings.Service
+	subManager   *websocket.SubscriptionManager
 
 	enableUI     bool
 	enableServer bool
@@ -286,6 +287,9 @@ func (app *Application) initializeServer(ctx context.Context) error {
 	// Set the event handler
 	app.wsClient.SetHandler(app.eventHandler.Handle)
 
+	// Initialize subscription manager
+	app.subManager = websocket.NewSubscriptionManager(app.wsClient, app.settingsSvc, log)
+
 	log.Info("server components initialized",
 		logger.F("instance_id", app.deduplicator.GetInstanceID()),
 	)
@@ -301,6 +305,12 @@ func (app *Application) start(ctx context.Context) error {
 	if app.enableServer {
 		if err := app.startServer(ctx); err != nil {
 			return err
+		}
+
+		// Set subscription manager on web server if both are enabled
+		if app.enableUI && app.webServer != nil && app.subManager != nil {
+			app.webServer.SetSubscriptionSyncer(app.subManager)
+			app.log.Info("subscription syncer connected to web server")
 		}
 	}
 
@@ -351,13 +361,8 @@ func (app *Application) startServer(ctx context.Context) error {
 	if len(subscribeChannels) == 0 {
 		app.log.Warn("no tokens configured for subscription")
 	} else {
-		// Build subscribe message
-		subscribeMsg := map[string]interface{}{
-			"id":     "3",
-			"method": "SUBSCRIBE",
-			"params": subscribeChannels,
-		}
-		if err := app.wsClient.Send(ctx, subscribeMsg); err != nil {
+		// Subscribe to channels using the Subscribe method (tracks channels for unsubscribe)
+		if err := app.wsClient.Subscribe(ctx, subscribeChannels); err != nil {
 			app.log.Error("failed to subscribe to channels", logger.F("error", err))
 		}
 		app.log.Info("subscribed to channels",
