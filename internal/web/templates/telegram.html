@@ -155,17 +155,51 @@ document.getElementById('telegram-form').addEventListener('submit', function(e) 
 });
 
 function testTelegram() {
-    fetch('/api/telegram/test', { method: 'POST' })
+    const form = document.getElementById('telegram-form');
+    
+    // Get current form values to test with
+    const data = {
+        bot_token: form.bot_token.value,
+        chat_id: form.chat_id.value
+    };
+    
+    // Validate before sending
+    if (!data.bot_token) {
+        showAlert('error', 'Please enter a bot token');
+        return;
+    }
+    if (!data.chat_id) {
+        showAlert('error', 'Please enter a chat ID');
+        return;
+    }
+    
+    // Show loading state
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = 'Sending...';
+    btn.disabled = true;
+    
+    fetch('/api/telegram/test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
         .then(res => res.json())
         .then(result => {
             if (result.error) {
                 showAlert('error', result.error);
             } else {
-                showAlert('success', 'Test message sent successfully');
+                showAlert('success', 'Test message sent successfully! Check your Telegram.');
             }
         })
         .catch(err => {
             showAlert('error', 'Failed to send test message');
+        })
+        .finally(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
         });
 }
 

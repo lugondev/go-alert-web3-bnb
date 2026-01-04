@@ -43,9 +43,10 @@ type Config struct {
 
 // Message represents a Telegram message
 type Message struct {
-	ChatID    string `json:"chat_id"`
-	Text      string `json:"text"`
-	ParseMode string `json:"parse_mode,omitempty"`
+	ChatID                string `json:"chat_id"`
+	Text                  string `json:"text"`
+	ParseMode             string `json:"parse_mode,omitempty"`
+	DisableWebPagePreview bool   `json:"disable_web_page_preview,omitempty"`
 }
 
 // Response represents the Telegram API response
@@ -112,6 +113,11 @@ func (n *Notifier) SendHTML(ctx context.Context, text string) error {
 
 // SendWithParseMode sends a message with specified parse mode
 func (n *Notifier) SendWithParseMode(ctx context.Context, text string, parseMode string) error {
+	return n.SendWithOptions(ctx, text, parseMode, false)
+}
+
+// SendWithOptions sends a message with specified parse mode and web page preview option
+func (n *Notifier) SendWithOptions(ctx context.Context, text string, parseMode string, disableWebPagePreview bool) error {
 	// Skip if not enabled
 	if !n.enabled {
 		n.log.Debug("telegram notification skipped: notifier disabled")
@@ -124,12 +130,23 @@ func (n *Notifier) SendWithParseMode(ctx context.Context, text string, parseMode
 	}
 
 	msg := Message{
-		ChatID:    n.config.ChatID,
-		Text:      text,
-		ParseMode: parseMode,
+		ChatID:                n.config.ChatID,
+		Text:                  text,
+		ParseMode:             parseMode,
+		DisableWebPagePreview: disableWebPagePreview,
 	}
 
 	return n.sendWithRetry(ctx, msg)
+}
+
+// SendMarkdownNoPreview sends a message with Markdown formatting and disabled web page preview
+func (n *Notifier) SendMarkdownNoPreview(ctx context.Context, text string) error {
+	return n.SendWithOptions(ctx, text, "Markdown", true)
+}
+
+// SendHTMLNoPreview sends a message with HTML formatting and disabled web page preview
+func (n *Notifier) SendHTMLNoPreview(ctx context.Context, text string) error {
+	return n.SendWithOptions(ctx, text, "HTML", true)
 }
 
 // checkRateLimit checks if we're within rate limits

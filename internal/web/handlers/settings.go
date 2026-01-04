@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"context"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/lugondev/go-alert-web3-bnb/internal/logger"
 	"github.com/lugondev/go-alert-web3-bnb/internal/settings"
+	"github.com/lugondev/go-alert-web3-bnb/internal/telegram"
 )
 
 // SettingsHandler handles HTTP requests for settings
@@ -237,12 +241,87 @@ func (h *SettingsHandler) SaveTelegram(c *fiber.Ctx) error {
 	})
 }
 
+// TestTelegramRequest represents the request body for testing Telegram
+type TestTelegramRequest struct {
+	BotToken string `json:"bot_token"`
+	ChatID   string `json:"chat_id"`
+}
+
 // TestTelegram sends a test message to Telegram
 func (h *SettingsHandler) TestTelegram(c *fiber.Ctx) error {
-	// TODO: Implement test message sending
+	var req TestTelegramRequest
+
+	// Try to parse request body for custom credentials
+	if err := c.BodyParser(&req); err != nil {
+		// If no body provided, use saved settings
+		req = TestTelegramRequest{}
+	}
+
+	// If no credentials in request, get from saved settings
+	if req.BotToken == "" || req.ChatID == "" {
+		ctx := c.Context()
+		telegramSettings, err := h.service.GetTelegram(ctx)
+		if err != nil {
+			h.log.Error("failed to get telegram settings for test", logger.F("error", err))
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to get Telegram settings",
+			})
+		}
+
+		if req.BotToken == "" {
+			req.BotToken = telegramSettings.BotToken
+		}
+		if req.ChatID == "" {
+			req.ChatID = telegramSettings.ChatID
+		}
+	}
+
+	// Validate credentials
+	if req.BotToken == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Bot token is required",
+		})
+	}
+	if req.ChatID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Chat ID is required",
+		})
+	}
+
+	// Create a temporary notifier for testing
+	testNotifier := telegram.NewNotifier(telegram.Config{
+		BotToken:   req.BotToken,
+		ChatID:     req.ChatID,
+		RateLimit:  60, // Allow more messages for testing
+		Timeout:    10 * time.Second,
+		RetryCount: 1,
+	}, h.log)
+
+	if !testNotifier.IsEnabled() {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid Telegram credentials",
+		})
+	}
+
+	// Send test message
+	formatter := telegram.NewFormatter()
+	testMessage := formatter.FormatAlert("success", "Test Message", "This is a test message from Web3 Alert. Your Telegram configuration is working correctly!")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := testNotifier.SendMarkdown(ctx, testMessage); err != nil {
+		h.log.Error("failed to send test telegram message", logger.F("error", err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Failed to send test message: " + err.Error(),
+		})
+	}
+
+	h.log.Info("test telegram message sent successfully")
+
 	return c.JSON(fiber.Map{
 		"success": true,
-		"message": "Test message sent",
+		"message": "Test message sent successfully",
 	})
 }
 
