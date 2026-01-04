@@ -258,11 +258,11 @@ func (f *Formatter) FormatTransaction(hash, from, to, value, symbol string, amou
 
 // FormatW3WTransaction formats a W3W transaction event for Telegram with Solscan link
 func (f *Formatter) FormatW3WTransaction(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol string, amount0, amount1, valueUSD, token0Price, token1Price float64, platformID int) string {
-	return f.FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol, amount0, amount1, valueUSD, token0Price, token1Price, platformID, nil)
+	return f.FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol, amount0, amount1, valueUSD, token0Price, token1Price, platformID, "", nil)
 }
 
 // FormatW3WTransactionWithTicker formats a W3W transaction event with optional ticker data
-func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol string, amount0, amount1, valueUSD, token0Price, token1Price float64, platformID int, tickerData TickerData) string {
+func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol string, amount0, amount1, valueUSD, token0Price, token1Price float64, platformID int, makerAddress string, tickerData TickerData) string {
 	// Determine emoji based on transaction type
 	emoji := "🔄"
 	typeLabel := "Swap"
@@ -278,19 +278,39 @@ func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, t
 	// Build explorer link based on platform
 	var explorerLink string
 	var explorerName string
+	var makerExplorerLink string
 	switch platformID {
 	case 16: // Solana
 		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
 		explorerName = "Solscan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://solscan.io/account/%s", makerAddress)
+		}
 	case 1: // Ethereum
 		explorerLink = fmt.Sprintf("https://etherscan.io/tx/%s", txHash)
 		explorerName = "Etherscan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://etherscan.io/address/%s", makerAddress)
+		}
 	case 56: // BSC
 		explorerLink = fmt.Sprintf("https://bscscan.com/tx/%s", txHash)
 		explorerName = "BscScan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://bscscan.com/address/%s", makerAddress)
+		}
 	default:
 		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
 		explorerName = "Explorer"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://solscan.io/account/%s", makerAddress)
+		}
+	}
+
+	// Build maker info section if available
+	makerInfo := ""
+	if makerAddress != "" {
+		makerInfo = fmt.Sprintf(`
+*Maker:* [%s](%s)`, truncateAddress(makerAddress), makerExplorerLink)
 	}
 
 	// Build ticker info section if available
@@ -320,7 +340,7 @@ func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, t
 
 	return fmt.Sprintf(`%s *%s Transaction*
 
-*Value:* $%.2f
+*Value:* $%.2f%s
 
 *%s:* %.6f
 *%s:* %.6f
@@ -333,6 +353,7 @@ func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, t
 		emoji,
 		typeLabel,
 		valueUSD,
+		makerInfo,
 		token0Symbol,
 		amount0,
 		token1Symbol,

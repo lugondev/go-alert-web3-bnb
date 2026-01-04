@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -29,10 +30,24 @@ type Client struct {
 	log logger.Logger
 }
 
+// buildRedisAddr constructs Redis address from host and port.
+// If host already contains a port (e.g., "host:port"), use it as-is.
+// Otherwise, append the configured port.
+func buildRedisAddr(host string, port int) string {
+	// Check if host already contains port (has colon and something after it)
+	if strings.Contains(host, ":") {
+		return host
+	}
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
 // NewClient creates a new Redis client
 func NewClient(cfg Config, log logger.Logger) (*Client, error) {
+	// Build Redis address - handle case where host already contains port
+	addr := buildRedisAddr(cfg.Host, cfg.Port)
+
 	rdb := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		Addr:         addr,
 		Password:     cfg.Password,
 		DB:           cfg.DB,
 		PoolSize:     cfg.PoolSize,
@@ -56,8 +71,7 @@ func NewClient(cfg Config, log logger.Logger) (*Client, error) {
 	}
 
 	client.log.Info("redis connected successfully",
-		logger.F("host", cfg.Host),
-		logger.F("port", cfg.Port),
+		logger.F("addr", addr),
 		logger.F("db", cfg.DB),
 	)
 

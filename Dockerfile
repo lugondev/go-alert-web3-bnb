@@ -65,4 +65,4 @@ ENV ENABLE_SERVER=true
 ENTRYPOINT ["./go-alert"]
 
 # Default command arguments (both UI and server enabled)
-CMD ["-config", "configs/config.yaml"]
+CMD ["-config", "configs/config.deploy.yaml"]

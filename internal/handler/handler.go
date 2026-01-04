@@ -671,6 +671,7 @@ func (h *EventHandler) handleTransaction(ctx context.Context, event *models.Even
 			w3wData.D.Token0PriceUSD,
 			w3wData.D.Token1PriceUSD,
 			w3wData.D.PlatformID,
+			w3wData.D.MakerAddress,
 			tickerData,
 		), nil
 	}

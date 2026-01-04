@@ -50,3 +50,4 @@ temp/
 
 # Config with secrets (keep example)
 configs/config.local.yaml
+configs/config.deploy.yaml
