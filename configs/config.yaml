@@ -50,9 +50,9 @@ tokens:
       chain_type: CT_501
       streams:
           - ticker24h
-    - address: pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn
-      chain_type: CT_501
-      streams:
-          - ticker24h
-          - holders
-          - tx
+    # - address: pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn
+    #   chain_type: CT_501
+    #   streams:
+    #       - ticker24h
+    #       - holders
+    #       - tx

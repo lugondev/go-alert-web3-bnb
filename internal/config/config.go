@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -116,17 +118,26 @@ type LoggerConfig struct {
 }
 
 // Load loads configuration from file and environment variables
+// Load order (later overrides earlier):
+// 1. Default values
+// 2. .env file (if exists) - loaded into process environment
+// 3. Process environment variables (already set in shell)
+// 4. YAML config file with ${VAR} expansion
+// 5. Environment variable overrides (explicit mappings)
 func Load(configPath string) (*Config, error) {
 	cfg := defaultConfig()
 
-	// Load from file if exists
+	// Load .env file first (if exists), won't override existing env vars
+	loadDotEnv(configPath)
+
+	// Load from YAML file if exists (with env var expansion)
 	if configPath != "" {
 		if err := loadFromFile(configPath, cfg); err != nil {
 			return nil, fmt.Errorf("failed to load config file: %w", err)
 		}
 	}
 
-	// Override with environment variables
+	// Override with environment variables (explicit mappings take precedence)
 	loadFromEnv(cfg)
 
 	// Validate configuration
@@ -135,6 +146,35 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// loadDotEnv loads .env file from multiple possible locations
+// It does NOT override existing environment variables
+func loadDotEnv(configPath string) {
+	// Possible .env file locations (in order of priority)
+	envPaths := []string{
+		".env",       // Current working directory
+		".env.local", // Local override
+	}
+
+	// Also check relative to config file location
+	if configPath != "" {
+		configDir := filepath.Dir(configPath)
+		envPaths = append(envPaths,
+			filepath.Join(configDir, ".env"),
+			filepath.Join(configDir, "..", ".env"),
+		)
+	}
+
+	// Load first found .env file (godotenv.Load won't override existing env vars)
+	for _, envPath := range envPaths {
+		if _, err := os.Stat(envPath); err == nil {
+			if err := godotenv.Load(envPath); err == nil {
+				// Successfully loaded, can continue to load more files
+				// godotenv.Load doesn't override, so loading multiple is safe
+			}
+		}
+	}
 }
 
 // defaultConfig returns configuration with default values
