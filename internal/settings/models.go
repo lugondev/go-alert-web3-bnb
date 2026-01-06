@@ -53,9 +53,81 @@ type TelegramSettings struct {
 	Enabled   bool   `json:"enabled"`
 }
 
+type TxFilterType string
+
+const (
+	TxFilterBoth TxFilterType = "both"
+	TxFilterBuy  TxFilterType = "buy"
+	TxFilterSell TxFilterType = "sell"
+)
+
+type TelegramBot struct {
+	BotToken string `json:"bot_token"`
+	ChatID   string `json:"chat_id"`
+	Enabled  bool   `json:"enabled"`
+	Name     string `json:"name,omitempty"`
+}
+
 // StreamNotifyConfig holds notification configuration for a single stream
 type StreamNotifyConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled         bool          `json:"enabled"`
+	TelegramBots    []TelegramBot `json:"telegram_bots,omitempty"`
+	TxMinValueUSD   float64       `json:"tx_min_value_usd,omitempty"`
+	TxFilterType    TxFilterType  `json:"tx_filter_type,omitempty"`
+	RateLimit       int           `json:"rate_limit,omitempty"`
+	RateLimitWindow time.Duration `json:"rate_limit_window,omitempty"`
+}
+
+func (s *StreamNotifyConfig) GetTelegramBots(defaultBot TelegramSettings) []TelegramBot {
+	if len(s.TelegramBots) > 0 {
+		return s.TelegramBots
+	}
+
+	if defaultBot.BotToken != "" && defaultBot.ChatID != "" {
+		return []TelegramBot{{
+			BotToken: defaultBot.BotToken,
+			ChatID:   defaultBot.ChatID,
+			Enabled:  defaultBot.Enabled,
+			Name:     "default",
+		}}
+	}
+
+	return nil
+}
+
+func (s *StreamNotifyConfig) GetRateLimit(defaultLimit int) int {
+	if s.RateLimit > 0 {
+		return s.RateLimit
+	}
+	return defaultLimit
+}
+
+func (s *StreamNotifyConfig) GetRateLimitWindow(defaultWindow time.Duration) time.Duration {
+	if s.RateLimitWindow > 0 {
+		return s.RateLimitWindow
+	}
+	return defaultWindow
+}
+
+func (s *StreamNotifyConfig) ShouldNotifyTx(txType string, valueUSD float64) bool {
+	if !s.Enabled {
+		return false
+	}
+
+	if s.TxMinValueUSD > 0 && valueUSD < s.TxMinValueUSD {
+		return false
+	}
+
+	if s.TxFilterType != "" && s.TxFilterType != TxFilterBoth {
+		if s.TxFilterType == TxFilterBuy && txType != "buy" {
+			return false
+		}
+		if s.TxFilterType == TxFilterSell && txType != "sell" {
+			return false
+		}
+	}
+
+	return true
 }
 
 // TokenSettings holds configuration for a single token
@@ -78,12 +150,10 @@ type TokenSettings struct {
 // It returns true if the stream is in the Streams list and has notify enabled
 // If StreamNotify is not set for the stream, it defaults to the global NotifyEnabled value
 func (t *TokenSettings) IsStreamNotifyEnabled(streamType StreamType) bool {
-	// First check if global notify is disabled
 	if !t.NotifyEnabled {
 		return false
 	}
 
-	// Check if stream exists in subscribed streams
 	streamExists := false
 	for _, s := range t.Streams {
 		if s == streamType {
@@ -95,15 +165,26 @@ func (t *TokenSettings) IsStreamNotifyEnabled(streamType StreamType) bool {
 		return false
 	}
 
-	// Check per-stream setting if exists
 	if t.StreamNotify != nil {
 		if config, exists := t.StreamNotify[streamType]; exists {
 			return config.Enabled
 		}
 	}
 
-	// Default to global notify enabled
 	return t.NotifyEnabled
+}
+
+func (t *TokenSettings) GetStreamConfig(streamType StreamType) (*StreamNotifyConfig, bool) {
+	if t.StreamNotify == nil {
+		return nil, false
+	}
+
+	config, exists := t.StreamNotify[streamType]
+	if !exists {
+		return nil, false
+	}
+
+	return &config, true
 }
 
 // SetStreamNotify sets the notify status for a specific stream

@@ -113,10 +113,19 @@
                                 </label>
 
                                 <div 
-                                    class="stream-notify-toggle flex items-center space-x-2 flex-shrink-0" 
+                                    class="stream-notify-toggle flex items-center space-x-3 flex-shrink-0" 
                                     id="notify-toggle-{{.Value}}"
                                     style="{{if not (index $.StreamMap .Value)}}display: none;{{end}}"
                                 >
+                                    <button 
+                                        type="button"
+                                        class="px-3 py-1.5 bg-cyber-gray-800 text-cyber-cyan text-xs font-bold uppercase tracking-wide hover:bg-cyber-cyan hover:text-cyber-black border border-cyber-gray-700 hover:border-cyber-cyan transition-all whitespace-nowrap"
+                                        onclick="openStreamConfigInEdit('{{$.Token.ID}}', '{{.Value}}', '{{.Label}}')"
+                                        title="Configure stream notifications, filters, and rate limits"
+                                    >
+                                        ⚙️ CONFIG
+                                    </button>
+                                    
                                     <span class="text-xs text-cyber-gray-500 font-bold uppercase whitespace-nowrap">NOTIFY</span>
                                     <button 
                                         type="button"
@@ -170,7 +179,341 @@
     </div>
 </div>
 
+<!-- Stream Configuration Modal -->
+<div id="stream-config-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-cyber-dark border-2 border-cyber-cyan w-full max-w-3xl shadow-2xl shadow-cyber-cyan/20 relative animate-slide-down">
+            <div class="border-b-2 border-cyber-cyan bg-cyber-darker px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-bold text-cyber-cyan uppercase tracking-wide" id="modal-title">[STREAM_CONFIG]</h2>
+                    <p class="text-xs text-cyber-gray-400 font-mono mt-1" id="modal-subtitle"></p>
+                </div>
+                <button onclick="closeStreamConfigModal()" class="text-cyber-gray-400 hover:text-cyber-red transition-colors">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+                <form id="stream-config-form" class="space-y-6">
+                    <div class="flex items-center space-x-3 p-4 bg-cyber-darker border border-cyber-gray-800">
+                        <input type="checkbox" id="config-enabled" class="w-5 h-5 bg-cyber-dark border-2 border-cyber-cyan text-cyber-cyan focus:ring-cyber-cyan">
+                        <label for="config-enabled" class="text-sm font-bold text-white uppercase tracking-wide cursor-pointer">Enable Notifications</label>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-cyber-cyan uppercase tracking-wide">Telegram Bots</h3>
+                            <button type="button" onclick="addTelegramBot()" class="px-4 py-2 bg-cyber-green/20 text-cyber-green border border-cyber-green text-xs font-bold uppercase hover:bg-cyber-green hover:text-cyber-black transition-all">
+                                + Add Bot
+                            </button>
+                        </div>
+                        <div id="telegram-bots-list" class="space-y-3"></div>
+                        <p class="text-xs text-cyber-gray-500 font-mono">Leave empty to use global Telegram settings</p>
+                    </div>
+
+                    <div id="tx-filters-section" class="space-y-4 hidden" style="display: none;">
+                        <div class="border-t-2 border-cyber-cyan/30 pt-4">
+                            <h3 class="text-sm font-bold text-cyber-cyan uppercase tracking-wide flex items-center mb-4">
+                                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/>
+                                </svg>
+                                Transaction Filters
+                            </h3>
+                            <div class="bg-cyber-darker/50 border border-cyber-gray-800 p-4 space-y-4">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-cyber-gray-400 uppercase tracking-wide mb-2">
+                                            Min Value (USD)
+                                            <span class="text-cyber-gray-600 font-normal ml-1">(0 = no filter)</span>
+                                        </label>
+                                        <input type="number" id="config-tx-min-value" min="0" step="0.01" 
+                                            placeholder="0"
+                                            class="w-full px-4 py-2 bg-cyber-dark border border-cyber-gray-800 text-white font-mono focus:border-cyber-cyan focus:outline-none transition-all">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-cyber-gray-400 uppercase tracking-wide mb-2">
+                                            Filter Type
+                                        </label>
+                                        <select id="config-tx-filter-type" 
+                                            class="w-full px-4 py-2 bg-cyber-dark border border-cyber-gray-800 text-white font-mono focus:border-cyber-cyan focus:outline-none transition-all">
+                                            <option value="both">Both Buy & Sell</option>
+                                            <option value="buy">Buy Only 📈</option>
+                                            <option value="sell">Sell Only 📉</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-cyber-gray-500 font-mono bg-cyber-darker border-l-2 border-cyber-cyan/50 pl-3 py-2">
+                                    <span class="text-cyber-cyan">ℹ</span> Only transactions matching these criteria will trigger notifications
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-bold text-cyber-cyan uppercase tracking-wide border-t border-cyber-gray-800 pt-4">Rate Limiting</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-cyber-gray-400 uppercase tracking-wide mb-2">Messages</label>
+                                <input type="number" id="config-rate-limit" min="0" step="1"
+                                    placeholder="e.g., 10"
+                                    class="w-full px-4 py-2 bg-cyber-darker border border-cyber-gray-800 text-white font-mono focus:border-cyber-cyan focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-cyber-gray-400 uppercase tracking-wide mb-2">Per Window</label>
+                                <input type="text" id="config-rate-window" 
+                                    value="60s"
+                                    placeholder="e.g., 1m, 5m, 1h"
+                                    pattern="^\d+[smh]$"
+                                    title="Format: number + unit (s=seconds, m=minutes, h=hours). Example: 1m, 30s, 2h"
+                                    class="w-full px-4 py-2 bg-cyber-darker border border-cyber-gray-800 text-white font-mono focus:border-cyber-cyan focus:outline-none">
+                            </div>
+                        </div>
+                        <p class="text-xs text-cyber-gray-500 font-mono">Leave empty to use global rate limit settings</p>
+                    </div>
+
+                    <div class="flex items-center justify-end space-x-4 pt-6 border-t border-cyber-gray-800">
+                        <button type="button" onclick="closeStreamConfigModal()" 
+                            class="px-6 py-3 bg-cyber-gray-800 text-white font-bold text-xs uppercase tracking-wider hover:bg-cyber-gray-700 transition-all">
+                            Cancel
+                        </button>
+                        <button type="submit" 
+                            class="px-6 py-3 bg-cyber-cyan text-cyber-black font-bold text-xs uppercase tracking-wider hover:bg-cyber-green hover:shadow-lg hover:shadow-cyber-green/50 transition-all">
+                            Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// Stream configuration modal variables
+let currentTokenId = null;
+let currentStreamType = null;
+let botCounter = 0;
+
+function openStreamConfigInEdit(tokenId, streamType, streamLabel) {
+    // Use token ID from form if editing, or use 'new' for new tokens
+    const isNew = {{.IsNew}};
+    currentTokenId = isNew ? null : (tokenId || '{{.Token.ID}}');
+    currentStreamType = streamType;
+    
+    document.getElementById('modal-title').textContent = `Configure Stream: ${streamLabel}`;
+    document.getElementById('modal-subtitle').textContent = `Stream: ${streamType}` + (currentTokenId ? ` | Token ID: ${currentTokenId}` : ' | New Token');
+    
+    // Load existing config if token exists
+    if (currentTokenId) {
+        loadStreamConfig(currentTokenId, streamType);
+    } else {
+        // Default config for new token
+        document.getElementById('config-enabled').checked = true;
+        document.getElementById('config-tx-min-value').value = 0;
+        document.getElementById('config-tx-filter-type').value = 'both';
+        document.getElementById('config-rate-limit').value = 0;
+        document.getElementById('config-rate-window').value = '60s';
+        
+        const botsList = document.getElementById('telegram-bots-list');
+        botsList.innerHTML = '';
+        botCounter = 0;
+    }
+    
+    // Show/hide TX filters based on stream type
+    const txFiltersSection = document.getElementById('tx-filters-section');
+    if (streamType === 'tx') {
+        txFiltersSection.classList.remove('hidden');
+        txFiltersSection.style.display = 'block';
+    } else {
+        txFiltersSection.classList.add('hidden');
+        txFiltersSection.style.display = 'none';
+    }
+    
+    document.getElementById('stream-config-modal').classList.remove('hidden');
+}
+
+async function loadStreamConfig(tokenId, streamType) {
+    try {
+        const response = await fetch(`/api/tokens/${tokenId}/streams/${streamType}/config`);
+        const config = await response.json();
+        
+        document.getElementById('config-enabled').checked = config.enabled !== false;
+        document.getElementById('config-tx-min-value').value = config.tx_min_value_usd !== undefined ? config.tx_min_value_usd : 0;
+        document.getElementById('config-tx-filter-type').value = config.tx_filter_type || 'both';
+        document.getElementById('config-rate-limit').value = config.rate_limit !== undefined ? config.rate_limit : 0;
+        
+        if (config.rate_limit_window) {
+            const duration = parseDuration(config.rate_limit_window);
+            document.getElementById('config-rate-window').value = duration;
+        } else {
+            document.getElementById('config-rate-window').value = '60s';
+        }
+        
+        const botsList = document.getElementById('telegram-bots-list');
+        botsList.innerHTML = '';
+        botCounter = 0;
+        
+        if (config.telegram_bots && config.telegram_bots.length > 0) {
+            config.telegram_bots.forEach(bot => {
+                addTelegramBot(bot);
+            });
+        }
+    } catch (error) {
+        console.error('[Stream Config] Failed to load:', error);
+        alert('[ERROR] Failed to load stream configuration: ' + error.message);
+    }
+}
+
+function closeStreamConfigModal() {
+    document.getElementById('stream-config-modal').classList.add('hidden');
+    currentTokenId = null;
+    currentStreamType = null;
+}
+
+function addTelegramBot(bot = null) {
+    const botsList = document.getElementById('telegram-bots-list');
+    const botId = botCounter++;
+    
+    const botEntry = document.createElement('div');
+    botEntry.className = 'bot-entry p-4 bg-cyber-darker border border-cyber-gray-800 space-y-3';
+    botEntry.dataset.botId = botId;
+    
+    botEntry.innerHTML = `
+        <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-cyber-cyan uppercase">Bot #${botId + 1}</span>
+            <button type="button" onclick="removeTelegramBot(${botId})" class="text-cyber-red hover:text-cyber-red/80 text-xs font-bold">Remove</button>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-cyber-gray-400 uppercase mb-1">Bot Token</label>
+                <input type="text" class="bot-token w-full px-3 py-2 bg-cyber-dark border border-cyber-gray-800 text-white font-mono text-xs focus:border-cyber-cyan focus:outline-none" 
+                    placeholder="123456:ABC-DEF..." value="${bot?.bot_token || ''}">
+            </div>
+            <div>
+                <label class="block text-xs text-cyber-gray-400 uppercase mb-1">Chat ID</label>
+                <input type="text" class="bot-chatid w-full px-3 py-2 bg-cyber-dark border border-cyber-gray-800 text-white font-mono text-xs focus:border-cyber-cyan focus:outline-none" 
+                    placeholder="-1001234567890" value="${bot?.chat_id || ''}">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-cyber-gray-400 uppercase mb-1">Name (optional)</label>
+                <input type="text" class="bot-name w-full px-3 py-2 bg-cyber-dark border border-cyber-gray-800 text-white font-mono text-xs focus:border-cyber-cyan focus:outline-none" 
+                    placeholder="My Bot" value="${bot?.name || ''}">
+            </div>
+            <div class="flex items-end">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" class="bot-enabled w-4 h-4" ${bot?.enabled !== false ? 'checked' : ''}>
+                    <span class="text-xs text-cyber-gray-400 uppercase">Enabled</span>
+                </label>
+            </div>
+        </div>
+    `;
+    
+    botsList.appendChild(botEntry);
+}
+
+function removeTelegramBot(botId) {
+    const botEntry = document.querySelector(`[data-bot-id="${botId}"]`);
+    if (botEntry) {
+        botEntry.remove();
+    }
+}
+
+function parseDuration(nanoseconds) {
+    if (typeof nanoseconds === 'string') return nanoseconds;
+    
+    const seconds = Math.floor(nanoseconds / 1000000000);
+    if (seconds >= 3600) {
+        return Math.floor(seconds / 3600) + 'h';
+    } else if (seconds >= 60) {
+        return Math.floor(seconds / 60) + 'm';
+    } else {
+        return seconds + 's';
+    }
+}
+
+document.getElementById('stream-config-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    if (!currentTokenId) {
+        alert('[ERROR] Please save the token first before configuring streams');
+        return;
+    }
+    
+    const botEntries = document.querySelectorAll('.bot-entry');
+    const telegramBots = Array.from(botEntries).map(entry => ({
+        bot_token: entry.querySelector('.bot-token').value,
+        chat_id: entry.querySelector('.bot-chatid').value,
+        name: entry.querySelector('.bot-name').value,
+        enabled: entry.querySelector('.bot-enabled').checked
+    })).filter(bot => bot.bot_token && bot.chat_id);
+    
+    // Validate rate limit window format
+    const rateLimitWindow = document.getElementById('config-rate-window').value.trim();
+    if (rateLimitWindow && rateLimitWindow !== '0s') {
+        const durationRegex = /^\d+[smh]$/;
+        if (!durationRegex.test(rateLimitWindow)) {
+            alert('[ERROR] Invalid rate limit window format. Use formats like: 1m, 5m, 1h, 30s');
+            return;
+        }
+    }
+    
+    // Validate TX min value
+    const txMinValue = parseFloat(document.getElementById('config-tx-min-value').value);
+    if (isNaN(txMinValue) || txMinValue < 0) {
+        alert('[ERROR] TX Min Value must be a non-negative number');
+        return;
+    }
+    
+    // Validate rate limit
+    const rateLimit = parseInt(document.getElementById('config-rate-limit').value);
+    if (isNaN(rateLimit) || rateLimit < 0) {
+        alert('[ERROR] Rate Limit must be a non-negative number');
+        return;
+    }
+    
+    const formData = {
+        enabled: document.getElementById('config-enabled').checked,
+        telegram_bots: telegramBots,
+        tx_min_value_usd: txMinValue || 0,
+        tx_filter_type: document.getElementById('config-tx-filter-type').value,
+        rate_limit: rateLimit || 0,
+        rate_limit_window: rateLimitWindow || ''
+    };
+    
+    console.log('[Stream Config] Submitting form data:', formData);
+    
+    try {
+        const response = await fetch(`/api/tokens/${currentTokenId}/streams/${currentStreamType}/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+            console.log('[Stream Config] Configuration saved successfully');
+            closeStreamConfigModal();
+            alert('[SUCCESS] Stream configuration saved');
+        } else {
+            const error = await response.json();
+            alert('[ERROR] ' + (error.error || 'Failed to save configuration'));
+        }
+    } catch (error) {
+        console.error('[Stream Config] Save error:', error);
+        alert('[ERROR] Network error: ' + error.message);
+    }
+});
+
+document.getElementById('stream-config-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'stream-config-modal') {
+        closeStreamConfigModal();
+    }
+});
+
+// Original token form functions
+
 function toggleStreamNotifyVisibility(streamValue, isChecked) {
     const notifyToggle = document.getElementById('notify-toggle-' + streamValue);
     if (notifyToggle) {

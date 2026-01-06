@@ -1,0 +1,21 @@
+{
+  "telegram_bots": [
+    {
+      "bot_token": "YOUR_BOT_TOKEN_1",
+      "chat_id": "YOUR_CHAT_ID_1",
+      "enabled": true,
+      "name": "Main Alert Bot"
+    },
+    {
+      "bot_token": "YOUR_BOT_TOKEN_2",
+      "chat_id": "YOUR_CHAT_ID_2",
+      "enabled": true,
+      "name": "Backup Bot"
+    }
+  ],
+  "tx_min_value_usd": 1000,
+  "tx_filter_type": "both",
+  "rate_limit": 10,
+  "rate_limit_window": "1m",
+  "enabled": true
+}

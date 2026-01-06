@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -70,6 +71,8 @@ func (h *SettingsHandler) RegisterRoutes(app *fiber.App) {
 	api.Post("/tokens/:id/notify", h.ToggleTokenNotify)
 	api.Put("/tokens/:id/streams", h.UpdateTokenStreams)
 	api.Post("/tokens/:id/streams/:stream/notify", h.ToggleStreamNotify)
+	api.Get("/tokens/:id/streams/:stream/config", h.GetStreamConfig)
+	api.Put("/tokens/:id/streams/:stream/config", h.UpdateStreamConfig)
 
 	// Subscriptions
 	api.Get("/subscriptions", h.GetSubscriptions)
@@ -779,4 +782,217 @@ func (h *SettingsHandler) GetStreamNotifyStatus(c *fiber.Ctx) error {
 		"enabled": enabled,
 		"stream":  streamType,
 	})
+}
+
+func (h *SettingsHandler) GetStreamConfig(c *fiber.Ctx) error {
+	ctx := c.Context()
+	tokenID := c.Params("id")
+	streamType := c.Params("stream")
+
+	token, err := h.service.GetToken(ctx, tokenID)
+	if err != nil {
+		h.log.Error("failed to get token for stream config",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+		)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Token not found",
+		})
+	}
+
+	streamTypeEnum := settings.StreamType(streamType)
+	validStream := false
+	for _, s := range token.Streams {
+		if s == streamTypeEnum {
+			validStream = true
+			break
+		}
+	}
+	if !validStream {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Stream not configured for this token",
+		})
+	}
+
+	config, exists := token.GetStreamConfig(streamTypeEnum)
+	if !exists {
+		return c.JSON(fiber.Map{
+			"enabled":           token.IsStreamNotifyEnabled(streamTypeEnum),
+			"telegram_bots":     []settings.TelegramBot{},
+			"tx_min_value_usd":  0,
+			"tx_filter_type":    settings.TxFilterBoth,
+			"rate_limit":        0,
+			"rate_limit_window": "0s",
+		})
+	}
+
+	return c.JSON(config)
+}
+
+func (h *SettingsHandler) UpdateStreamConfig(c *fiber.Ctx) error {
+	ctx := c.Context()
+	tokenID := c.Params("id")
+	streamType := c.Params("stream")
+
+	var formData StreamConfigFormData
+	if err := c.BodyParser(&formData); err != nil {
+		h.log.Error("failed to parse stream config form data",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+			logger.F("stream", streamType),
+		)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid form data",
+		})
+	}
+
+	if err := formData.Validate(settings.StreamType(streamType)); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	token, err := h.service.GetToken(ctx, tokenID)
+	if err != nil {
+		h.log.Error("failed to get token for stream config update",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+		)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Token not found",
+		})
+	}
+
+	streamTypeEnum := settings.StreamType(streamType)
+	validStream := false
+	for _, s := range token.Streams {
+		if s == streamTypeEnum {
+			validStream = true
+			break
+		}
+	}
+	if !validStream {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Stream not configured for this token",
+		})
+	}
+
+	config := formData.ToStreamNotifyConfig()
+
+	if token.StreamNotify == nil {
+		token.StreamNotify = make(map[settings.StreamType]settings.StreamNotifyConfig)
+	}
+	token.StreamNotify[streamTypeEnum] = config
+
+	if err := h.service.UpdateToken(ctx, *token); err != nil {
+		h.log.Error("failed to update token stream config",
+			logger.F("error", err),
+			logger.F("token_id", tokenID),
+			logger.F("stream", streamType),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to update stream configuration",
+		})
+	}
+
+	h.log.Info("stream config updated",
+		logger.F("token_id", tokenID),
+		logger.F("stream", streamType),
+		logger.F("enabled", config.Enabled),
+	)
+
+	if c.Get("HX-Request") == "true" {
+		return c.Render("partials/alert", fiber.Map{
+			"Type":    "success",
+			"Message": "Stream configuration updated successfully",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Stream configuration updated",
+		"config":  config,
+	})
+}
+
+type StreamConfigFormData struct {
+	Enabled         bool                  `json:"enabled" form:"enabled"`
+	TelegramBots    []TelegramBotFormData `json:"telegram_bots" form:"telegram_bots"`
+	TxMinValueUSD   float64               `json:"tx_min_value_usd" form:"tx_min_value_usd"`
+	TxFilterType    string                `json:"tx_filter_type" form:"tx_filter_type"`
+	RateLimit       int                   `json:"rate_limit" form:"rate_limit"`
+	RateLimitWindow string                `json:"rate_limit_window" form:"rate_limit_window"`
+}
+
+type TelegramBotFormData struct {
+	BotToken string `json:"bot_token" form:"bot_token"`
+	ChatID   string `json:"chat_id" form:"chat_id"`
+	Enabled  bool   `json:"enabled" form:"enabled"`
+	Name     string `json:"name" form:"name"`
+}
+
+func (f *StreamConfigFormData) Validate(streamType settings.StreamType) error {
+	for i, bot := range f.TelegramBots {
+		if bot.BotToken == "" {
+			return fmt.Errorf("telegram bot #%d: bot token is required", i+1)
+		}
+		if bot.ChatID == "" {
+			return fmt.Errorf("telegram bot #%d: chat ID is required", i+1)
+		}
+	}
+
+	if streamType == settings.StreamTx {
+		if f.TxMinValueUSD < 0 {
+			return fmt.Errorf("tx_min_value_usd must be >= 0")
+		}
+		if f.TxFilterType != "" &&
+			f.TxFilterType != string(settings.TxFilterBoth) &&
+			f.TxFilterType != string(settings.TxFilterBuy) &&
+			f.TxFilterType != string(settings.TxFilterSell) {
+			return fmt.Errorf("tx_filter_type must be one of: both, buy, sell")
+		}
+	}
+
+	if f.RateLimit < 0 {
+		return fmt.Errorf("rate_limit must be >= 0")
+	}
+
+	if f.RateLimitWindow != "" && f.RateLimitWindow != "0s" {
+		if _, err := time.ParseDuration(f.RateLimitWindow); err != nil {
+			return fmt.Errorf("invalid rate_limit_window format: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (f *StreamConfigFormData) ToStreamNotifyConfig() settings.StreamNotifyConfig {
+	config := settings.StreamNotifyConfig{
+		Enabled:       f.Enabled,
+		TxMinValueUSD: f.TxMinValueUSD,
+		RateLimit:     f.RateLimit,
+	}
+
+	if len(f.TelegramBots) > 0 {
+		config.TelegramBots = make([]settings.TelegramBot, len(f.TelegramBots))
+		for i, bot := range f.TelegramBots {
+			config.TelegramBots[i] = settings.TelegramBot{
+				BotToken: bot.BotToken,
+				ChatID:   bot.ChatID,
+				Enabled:  bot.Enabled,
+				Name:     bot.Name,
+			}
+		}
+	}
+
+	if f.TxFilterType != "" {
+		config.TxFilterType = settings.TxFilterType(f.TxFilterType)
+	}
+
+	if f.RateLimitWindow != "" && f.RateLimitWindow != "0s" {
+		duration, _ := time.ParseDuration(f.RateLimitWindow)
+		config.RateLimitWindow = duration
+	}
+
+	return config
 }

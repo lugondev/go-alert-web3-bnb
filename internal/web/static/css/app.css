@@ -258,16 +258,8 @@ tbody tr {
 tbody tr:hover {
     background: var(--color-gray-900);
     box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.1);
-    position: relative;
-}
-
-tbody tr:hover::before {
-    content: '>';
-    position: absolute;
-    left: 0.5rem;
-    color: var(--color-cyan);
-    font-weight: bold;
-    animation: blink 1s infinite;
+    border-left: 3px solid var(--color-cyan);
+    transition: all 0.2s ease;
 }
 
 @keyframes blink {
@@ -411,6 +403,21 @@ input[type="checkbox"]:checked::after {
 .modal-overlay {
     background-color: rgba(10, 14, 20, 0.95);
     backdrop-filter: blur(8px);
+}
+
+@keyframes slide-down {
+    from {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.animate-slide-down {
+    animation: slide-down 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================

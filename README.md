@@ -6,6 +6,15 @@ A Golang application that monitors blockchain events via WebSocket and sends ale
 
 -   WebSocket client with auto-reconnection
 -   Telegram notifications with rate limiting
+-   **Web UI for Stream Configuration**:
+    -   Visual modal interface for per-stream settings
+    -   Click stream badges to configure
+    -   No JSON editing required
+-   **Per-stream configuration**:
+    -   Custom Telegram bots for each stream
+    -   Multiple Telegram bots per stream
+    -   TX stream filters (min value, buy/sell/both)
+    -   Stream-specific rate limiting
 -   Structured logging (JSON/Text format)
 -   Event filtering and processing
 -   Redis pub/sub for cluster coordination
@@ -167,6 +176,141 @@ See `configs/config.yaml` for full configuration options including:
 -   Telegram rate limiting
 -   Redis connection pooling
 -   Token subscriptions
+
+### Stream-Specific Configuration
+
+Each stream can be configured independently with custom settings via the **Web UI** or Redis.
+
+#### Using the Web UI (Recommended)
+
+1. Navigate to http://localhost:8080/tokens
+2. Find your token in the list
+3. Click on any stream badge (e.g., `tx`, `ticker24h`)
+4. Configure in the modal:
+   - Enable/disable notifications
+   - Add multiple Telegram bots
+   - Set TX filters (min value, buy/sell)
+   - Configure rate limiting
+5. Click "Save Configuration"
+
+**Visual Guide:**
+
+```
+Tokens Page → Stream Badge → Configuration Modal
+                  ↓
+         ┌──────────────────┐
+         │ [tx] [ticker24h] │ ← Click to configure
+         └──────────────────┘
+                  ↓
+    ┌─────────────────────────────┐
+    │ Stream Configuration Modal  │
+    │                             │
+    │ ☑ Enable Notifications      │
+    │                             │
+    │ Telegram Bots  [+ Add Bot]  │
+    │ TX Filters (min value, etc) │
+    │ Rate Limiting               │
+    │                             │
+    │     [Cancel] [Save]         │
+    └─────────────────────────────┘
+```
+
+See [Web UI Guide](docs/STREAM_CONFIG_UI.md) for detailed instructions.
+
+#### Using Redis (Advanced)
+
+Store configuration as JSON in Redis:
+
+```bash
+redis-cli SET "settings:token:{token-id}" '{
+  "stream_notify": {
+    "tx": {
+      "enabled": true,
+      "telegram_bots": [...],
+      "tx_min_value_usd": 1000,
+      "tx_filter_type": "buy",
+      "rate_limit": 10,
+      "rate_limit_window": 60000000000
+    }
+  }
+}'
+```
+
+See [API Documentation](docs/STREAM_CONFIG.md) for JSON format and `configs/stream-config-example.json` for examples.
+
+#### Available Options
+
+| Option                | Type            | Description                                    | Default       |
+| --------------------- | --------------- | ---------------------------------------------- | ------------- |
+| `enabled`             | boolean         | Enable/disable notifications for this stream   | `true`        |
+| `telegram_bots`       | array           | List of Telegram bots to send notifications to | Global config |
+| `tx_min_value_usd`    | number          | Minimum transaction value in USD (TX only)     | `0` (no min)  |
+| `tx_filter_type`      | string          | Filter: `"both"`, `"buy"`, or `"sell"` (TX)    | `"both"`      |
+| `rate_limit`          | number          | Messages per window                            | Global limit  |
+| `rate_limit_window`   | duration string | Rate limit window (e.g., `"1m"`, `"5m"`)       | Global window |
+
+#### Example: Configure TX Stream
+
+```json
+{
+  "enabled": true,
+  "telegram_bots": [
+    {
+      "bot_token": "123456:ABC-DEF...",
+      "chat_id": "-1001234567890",
+      "enabled": true,
+      "name": "High Value Alerts"
+    },
+    {
+      "bot_token": "789012:GHI-JKL...",
+      "chat_id": "-1009876543210",
+      "enabled": true,
+      "name": "Backup Bot"
+    }
+  ],
+  "tx_min_value_usd": 1000,
+  "tx_filter_type": "buy",
+  "rate_limit": 10,
+  "rate_limit_window": "1m"
+}
+```
+
+This configuration will:
+- Only notify for BUY transactions (ignore sells)
+- Filter transactions below $1000 USD
+- Send to 2 different Telegram bots simultaneously
+- Limit to 10 messages per minute for this stream
+
+#### Use Cases
+
+**1. High-Value Transaction Alerts**
+```json
+{
+  "tx_min_value_usd": 10000,
+  "tx_filter_type": "both",
+  "telegram_bots": [{"bot_token": "...", "chat_id": "...", "enabled": true}]
+}
+```
+
+**2. Buy-Only Monitoring**
+```json
+{
+  "tx_filter_type": "buy",
+  "rate_limit": 5,
+  "rate_limit_window": "1m"
+}
+```
+
+**3. Multiple Notification Channels**
+```json
+{
+  "telegram_bots": [
+    {"bot_token": "BOT1", "chat_id": "TEAM_CHAT", "name": "Team"},
+    {"bot_token": "BOT2", "chat_id": "VIP_CHAT", "name": "VIP"},
+    {"bot_token": "BOT3", "chat_id": "PUBLIC_CHAT", "name": "Public"}
+  ]
+}
+```
 
 ## W3W Stream Channels
 

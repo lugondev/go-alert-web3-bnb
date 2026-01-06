@@ -367,49 +367,7 @@ func (h *EventHandler) doProcessEvent(ctx context.Context, event *models.Event) 
 		return nil
 	}
 
-	// Skip if notifier is nil or disabled (check before rate limiting)
-	if h.notifier == nil || !h.notifier.IsEnabled() {
-		if h.isStreamDebugEnabled(event.Stream) {
-			h.log.Debug("telegram notification skipped: notifier not enabled",
-				logger.F("event_type", string(event.Type)),
-			)
-		}
-		return nil
-	}
-
-	// Check if token notification is enabled
-	if !h.isTokenNotifyEnabled(ctx, event.Stream) {
-		h.log.Warn("SKIPPING notification - token notify disabled",
-			logger.F("event_type", string(event.Type)),
-			logger.F("stream", event.Stream),
-		)
-		return nil
-	}
-
-	// Check rate limit before sending
-	if h.rateLimiter != nil {
-		allowed, err := h.rateLimiter.Allow(ctx, h.rateLimitConfig)
-		if err != nil {
-			h.log.Error("rate limit check failed",
-				logger.F("error", err),
-			)
-			// Continue anyway on rate limit check failure
-		} else if !allowed {
-			h.log.Warn("rate limit exceeded, skipping notification",
-				logger.F("event_type", string(event.Type)),
-			)
-			return nil
-		}
-	}
-
-	// Send to Telegram
-	if err := h.notifier.SendMarkdown(ctx, message); err != nil {
-		h.log.Error("failed to send telegram notification",
-			logger.F("error", err),
-			logger.F("event_type", string(event.Type)),
-		)
-		return err
-	}
+	return h.sendNotification(ctx, event, message)
 
 	// Publish event to other instances (for monitoring/logging)
 	if h.pubsub != nil {
@@ -1124,45 +1082,19 @@ func (h *EventHandler) processMultiHopSwap(ctx context.Context, multiHop *models
 		)
 	}
 
-	// Check if notification is enabled (use detected token address)
 	if tokenInfo.Address != "" {
 		tokenAddress = tokenInfo.Address
 	}
 	chainID = multiHop.PlatformID
 	stream = fmt.Sprintf("tx@%d_%s", chainID, tokenAddress)
 
-	if !h.isTokenNotifyEnabled(ctx, stream) {
-		h.log.Warn("SKIPPING multi-hop notification - token notify disabled",
-			logger.F("stream", stream),
-		)
-		return
+	fakeEvent := &models.Event{
+		Type:   models.EventTypeTransaction,
+		Stream: stream,
+		Data:   nil,
 	}
 
-	// Skip if notifier is nil or disabled
-	if h.notifier == nil || !h.notifier.IsEnabled() {
-		if debugEnabled {
-			h.log.Debug("telegram notification skipped: notifier not enabled",
-				logger.F("event_type", "multi_hop_swap"),
-			)
-		}
-		return
-	}
-
-	// Check rate limit
-	if h.rateLimiter != nil {
-		allowed, err := h.rateLimiter.Allow(ctx, h.rateLimitConfig)
-		if err != nil {
-			h.log.Error("rate limit check failed",
-				logger.F("error", err),
-			)
-		} else if !allowed {
-			h.log.Warn("rate limit exceeded, skipping multi-hop notification")
-			return
-		}
-	}
-
-	// Send notification
-	if err := h.notifier.SendMarkdown(ctx, message); err != nil {
+	if err := h.sendNotificationForMultiHop(ctx, fakeEvent, message, multiHop.TxHash, multiHop.FirstSwap.D.TxType, multiHop.TotalValueUSD); err != nil {
 		h.log.Error("failed to send multi-hop notification",
 			logger.F("error", err),
 			logger.F("tx_hash", multiHop.TxHash),
@@ -1334,7 +1266,6 @@ func (h *EventHandler) detectSubscribedTokenInfo(multiHop *models.MultiHopSwap, 
 // (token that appears as output of one swap and input of next)
 func (h *EventHandler) detectRoutingToken(multiHop *models.MultiHopSwap) *SubscribedTokenInfo {
 	if !multiHop.IsMultiHop() {
-		// Single swap, return token0 (the base/from token)
 		return &SubscribedTokenInfo{
 			Address:  multiHop.FirstSwap.D.Token0Address,
 			Symbol:   multiHop.FirstSwap.D.Token0Symbol,
@@ -1345,13 +1276,10 @@ func (h *EventHandler) detectRoutingToken(multiHop *models.MultiHopSwap) *Subscr
 		}
 	}
 
-	// For multi-hop, find the token that appears as output of one swap
-	// and input of the next swap (the bridge/routing token)
 	for i := 0; i < len(multiHop.Swaps)-1; i++ {
 		currentSwap := multiHop.Swaps[i]
 		nextSwap := multiHop.Swaps[i+1]
 
-		// Check if current swap's output (token1) matches next swap's input (token0)
 		if strings.EqualFold(currentSwap.D.Token1Address, nextSwap.D.Token0Address) {
 			return &SubscribedTokenInfo{
 				Address:    currentSwap.D.Token1Address,
@@ -1367,7 +1295,6 @@ func (h *EventHandler) detectRoutingToken(multiHop *models.MultiHopSwap) *Subscr
 		}
 	}
 
-	// Fallback: return first swap's token0
 	return &SubscribedTokenInfo{
 		Address:  multiHop.FirstSwap.D.Token0Address,
 		Symbol:   multiHop.FirstSwap.D.Token0Symbol,
@@ -1376,4 +1303,339 @@ func (h *EventHandler) detectRoutingToken(multiHop *models.MultiHopSwap) *Subscr
 		ToToken:  multiHop.LastSwap.D.Token1Symbol,
 		PriceUSD: multiHop.FirstSwap.D.Token0PriceUSD,
 	}
+}
+
+func (h *EventHandler) sendNotification(ctx context.Context, event *models.Event, message string) error {
+	if h.notifier == nil || !h.notifier.IsEnabled() {
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("telegram notification skipped: notifier not enabled",
+				logger.F("event_type", string(event.Type)),
+			)
+		}
+		return nil
+	}
+
+	tokenAddress := extractTokenAddress(event.Stream)
+	streamType := extractStreamType(event.Stream)
+
+	if tokenAddress == "" || streamType == "" {
+		h.log.Warn("could not extract token/stream info, using global config",
+			logger.F("stream", event.Stream),
+		)
+		return h.sendWithGlobalConfig(ctx, event, message)
+	}
+
+	tokens, err := h.settingsSvc.GetTokens(ctx)
+	if err != nil {
+		h.log.Warn("failed to get tokens, using global config",
+			logger.F("error", err),
+		)
+		return h.sendWithGlobalConfig(ctx, event, message)
+	}
+
+	for _, token := range tokens {
+		if !strings.EqualFold(token.Address, tokenAddress) {
+			continue
+		}
+
+		streamConfig, exists := token.GetStreamConfig(settings.StreamType(streamType))
+		if !exists || !streamConfig.Enabled {
+			h.log.Info("stream notification disabled",
+				logger.F("token", tokenAddress),
+				logger.F("stream", streamType),
+			)
+			return nil
+		}
+
+		if streamType == "tx" {
+			txType := ""
+			valueUSD := 0.0
+
+			w3wData, err := event.ParseW3WTransactionData()
+			if err == nil {
+				txType = w3wData.D.TxType
+				valueUSD = w3wData.D.ValueUSD
+			}
+
+			if !streamConfig.ShouldNotifyTx(txType, valueUSD) {
+				h.log.Info("tx filtered by stream config",
+					logger.F("tx_type", txType),
+					logger.F("value_usd", valueUSD),
+					logger.F("min_value", streamConfig.TxMinValueUSD),
+					logger.F("filter_type", streamConfig.TxFilterType),
+				)
+				return nil
+			}
+		}
+
+		telegramSettings, _ := h.settingsSvc.GetTelegram(ctx)
+		defaultBot := settings.TelegramSettings{}
+		if telegramSettings != nil {
+			defaultBot = *telegramSettings
+		}
+
+		bots := streamConfig.GetTelegramBots(defaultBot)
+		if len(bots) == 0 {
+			h.log.Warn("no telegram bots configured for stream",
+				logger.F("token", tokenAddress),
+				logger.F("stream", streamType),
+			)
+			return nil
+		}
+
+		rateLimitKey := fmt.Sprintf("stream:%s:%s", tokenAddress, streamType)
+		rateLimitConfig := redis.RateLimitConfig{
+			Key:    rateLimitKey,
+			Limit:  streamConfig.GetRateLimit(h.rateLimitConfig.Limit),
+			Window: streamConfig.GetRateLimitWindow(h.rateLimitConfig.Window),
+		}
+
+		if h.rateLimiter != nil {
+			allowed, err := h.rateLimiter.Allow(ctx, rateLimitConfig)
+			if err != nil {
+				h.log.Error("rate limit check failed",
+					logger.F("error", err),
+				)
+			} else if !allowed {
+				h.log.Warn("stream rate limit exceeded",
+					logger.F("stream", event.Stream),
+				)
+				return nil
+			}
+		}
+
+		return h.sendToMultipleBots(ctx, bots, message, event.Type)
+	}
+
+	h.log.Warn("token not found, using global config",
+		logger.F("token", tokenAddress),
+	)
+	return h.sendWithGlobalConfig(ctx, event, message)
+}
+
+func (h *EventHandler) sendWithGlobalConfig(ctx context.Context, event *models.Event, message string) error {
+	if h.rateLimiter != nil {
+		allowed, err := h.rateLimiter.Allow(ctx, h.rateLimitConfig)
+		if err != nil {
+			h.log.Error("rate limit check failed",
+				logger.F("error", err),
+			)
+		} else if !allowed {
+			h.log.Warn("global rate limit exceeded",
+				logger.F("event_type", string(event.Type)),
+			)
+			return nil
+		}
+	}
+
+	if err := h.notifier.SendMarkdown(ctx, message); err != nil {
+		h.log.Error("failed to send telegram notification",
+			logger.F("error", err),
+			logger.F("event_type", string(event.Type)),
+		)
+		return err
+	}
+
+	if h.pubsub != nil {
+		if err := h.pubsub.PublishEvent(ctx, event); err != nil {
+			h.log.Warn("failed to publish event to pubsub",
+				logger.F("error", err),
+			)
+		}
+	}
+
+	h.log.Info("notification sent",
+		logger.F("event_type", string(event.Type)),
+		logger.F("stream", event.Stream),
+	)
+
+	return nil
+}
+
+func (h *EventHandler) sendToMultipleBots(ctx context.Context, bots []settings.TelegramBot, message string, eventType models.EventType) error {
+	if len(bots) == 0 {
+		return fmt.Errorf("no bots configured")
+	}
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(bots))
+
+	for i, bot := range bots {
+		if !bot.Enabled {
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int, b settings.TelegramBot) {
+			defer wg.Done()
+
+			notifier := telegram.NewNotifier(telegram.Config{
+				BotToken:   b.BotToken,
+				ChatID:     b.ChatID,
+				RateLimit:  30,
+				Timeout:    30 * time.Second,
+				RetryCount: 3,
+			}, h.log)
+
+			if err := notifier.SendMarkdown(ctx, message); err != nil {
+				h.log.Error("failed to send to bot",
+					logger.F("bot_index", idx),
+					logger.F("bot_name", b.Name),
+					logger.F("error", err),
+				)
+				errChan <- err
+			}
+		}(i, bot)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	var firstErr error
+	sentCount := 0
+	for err := range errChan {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	sentCount = len(bots) - len(errChan)
+
+	h.log.Info("notifications sent to multiple bots",
+		logger.F("event_type", string(eventType)),
+		logger.F("total_bots", len(bots)),
+		logger.F("sent_count", sentCount),
+		logger.F("failed_count", len(errChan)),
+	)
+
+	return firstErr
+}
+
+func (h *EventHandler) sendNotificationForMultiHop(ctx context.Context, event *models.Event, message, txHash, txType string, valueUSD float64) error {
+	if h.notifier == nil || !h.notifier.IsEnabled() {
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("telegram notification skipped: notifier not enabled",
+				logger.F("tx_hash", txHash),
+			)
+		}
+		return nil
+	}
+
+	tokenAddress := extractTokenAddress(event.Stream)
+	streamType := "tx"
+
+	if tokenAddress == "" {
+		h.log.Warn("could not extract token address, using global config",
+			logger.F("stream", event.Stream),
+		)
+		return h.sendWithGlobalConfigForMultiHop(ctx, message, txHash)
+	}
+
+	tokens, err := h.settingsSvc.GetTokens(ctx)
+	if err != nil {
+		h.log.Warn("failed to get tokens, using global config",
+			logger.F("error", err),
+		)
+		return h.sendWithGlobalConfigForMultiHop(ctx, message, txHash)
+	}
+
+	for _, token := range tokens {
+		if !strings.EqualFold(token.Address, tokenAddress) {
+			continue
+		}
+
+		streamConfig, exists := token.GetStreamConfig(settings.StreamType(streamType))
+		if !exists || !streamConfig.Enabled {
+			h.log.Info("stream notification disabled for multi-hop",
+				logger.F("token", tokenAddress),
+				logger.F("tx_hash", txHash),
+			)
+			return nil
+		}
+
+		if !streamConfig.ShouldNotifyTx(txType, valueUSD) {
+			h.log.Info("multi-hop tx filtered by stream config",
+				logger.F("tx_hash", txHash),
+				logger.F("tx_type", txType),
+				logger.F("value_usd", valueUSD),
+				logger.F("min_value", streamConfig.TxMinValueUSD),
+				logger.F("filter_type", streamConfig.TxFilterType),
+			)
+			return nil
+		}
+
+		telegramSettings, _ := h.settingsSvc.GetTelegram(ctx)
+		defaultBot := settings.TelegramSettings{}
+		if telegramSettings != nil {
+			defaultBot = *telegramSettings
+		}
+
+		bots := streamConfig.GetTelegramBots(defaultBot)
+		if len(bots) == 0 {
+			h.log.Warn("no telegram bots configured for multi-hop",
+				logger.F("token", tokenAddress),
+				logger.F("tx_hash", txHash),
+			)
+			return nil
+		}
+
+		rateLimitKey := fmt.Sprintf("stream:%s:%s", tokenAddress, streamType)
+		rateLimitConfig := redis.RateLimitConfig{
+			Key:    rateLimitKey,
+			Limit:  streamConfig.GetRateLimit(h.rateLimitConfig.Limit),
+			Window: streamConfig.GetRateLimitWindow(h.rateLimitConfig.Window),
+		}
+
+		if h.rateLimiter != nil {
+			allowed, err := h.rateLimiter.Allow(ctx, rateLimitConfig)
+			if err != nil {
+				h.log.Error("rate limit check failed",
+					logger.F("error", err),
+				)
+			} else if !allowed {
+				h.log.Warn("stream rate limit exceeded for multi-hop",
+					logger.F("tx_hash", txHash),
+				)
+				return nil
+			}
+		}
+
+		return h.sendToMultipleBots(ctx, bots, message, models.EventTypeTransaction)
+	}
+
+	h.log.Warn("token not found for multi-hop, using global config",
+		logger.F("token", tokenAddress),
+		logger.F("tx_hash", txHash),
+	)
+	return h.sendWithGlobalConfigForMultiHop(ctx, message, txHash)
+}
+
+func (h *EventHandler) sendWithGlobalConfigForMultiHop(ctx context.Context, message, txHash string) error {
+	if h.rateLimiter != nil {
+		allowed, err := h.rateLimiter.Allow(ctx, h.rateLimitConfig)
+		if err != nil {
+			h.log.Error("rate limit check failed",
+				logger.F("error", err),
+			)
+		} else if !allowed {
+			h.log.Warn("global rate limit exceeded for multi-hop",
+				logger.F("tx_hash", txHash),
+			)
+			return nil
+		}
+	}
+
+	if err := h.notifier.SendMarkdown(ctx, message); err != nil {
+		h.log.Error("failed to send multi-hop notification",
+			logger.F("error", err),
+			logger.F("tx_hash", txHash),
+		)
+		return err
+	}
+
+	h.log.Info("multi-hop notification sent",
+		logger.F("tx_hash", txHash),
+	)
+
+	return nil
 }

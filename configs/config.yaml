@@ -19,7 +19,7 @@ telegram:
     retry_count: 3
 
 redis:
-    host: localhost
+    host: redis
     port: 6379
     password: ''
     db: 0
@@ -49,6 +49,26 @@ logger:
 # Supported chain_type: CT_501 (Solana), 56 (BSC), 8453 (Base)
 # Chain ID is auto-mapped: CT_501 -> 16, 56 -> 14, 8453 -> 199
 # Available streams: ticker24h, holders, tx, kline
+#
+# Stream-specific configuration (via Settings UI or Redis):
+# Each stream can have custom settings:
+#   - telegram_bots: Array of telegram bot configs for this stream
+#   - tx_min_value_usd: Minimum transaction value in USD (for tx stream)
+#   - tx_filter_type: "both", "buy", or "sell" (for tx stream)
+#   - rate_limit: Messages per window (overrides global rate limit)
+#   - rate_limit_window: Time window for rate limiting (e.g., "1m", "5m")
+#
+# Example stream config in Settings UI:
+# {
+#   "telegram_bots": [
+#     {"bot_token": "...", "chat_id": "...", "enabled": true, "name": "Main Bot"},
+#     {"bot_token": "...", "chat_id": "...", "enabled": true, "name": "Backup Bot"}
+#   ],
+#   "tx_min_value_usd": 1000,
+#   "tx_filter_type": "buy",
+#   "rate_limit": 10,
+#   "rate_limit_window": "1m"
+# }
 tokens:
     - address: So11111111111111111111111111111111111111111
       chain_type: CT_501
