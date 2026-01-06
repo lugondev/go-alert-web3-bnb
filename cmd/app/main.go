@@ -267,6 +267,8 @@ func (app *Application) initializeServer(ctx context.Context) error {
 			QueueSize:       100,
 			WorkerCount:     3,
 			EnableDedup:     true,
+			EnableMultiHop:  true,                   // Enable multi-hop swap grouping
+			MultiHopWindow:  500 * time.Millisecond, // Group swaps within 500ms window
 			RateLimitKey:    "telegram:notify",
 			RateLimitMax:    cfg.Redis.RateLimitMax,
 			RateLimitWindow: cfg.Redis.RateLimitWindow,
