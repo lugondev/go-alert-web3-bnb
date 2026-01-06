@@ -5,49 +5,97 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}} - Web3 Alert</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'Courier New', 'monospace'],
+                        display: ['Space Grotesk', '-apple-system', 'sans-serif']
+                    },
+                    colors: {
+                        'cyber-black': '#0a0e14',
+                        'cyber-dark': '#0d1117',
+                        'cyber-darker': '#050508',
+                        'cyber-gray-900': '#16181d',
+                        'cyber-gray-800': '#1c1f26',
+                        'cyber-gray-700': '#23262e',
+                        'cyber-gray-600': '#2d3139',
+                        'cyber-gray-500': '#4a4d56',
+                        'cyber-gray-400': '#6b6e76',
+                        'cyber-cyan': '#00f0ff',
+                        'cyber-green': '#39ff14',
+                        'cyber-amber': '#ffb627',
+                        'cyber-red': '#ff3366',
+                        'cyber-purple': '#b967ff'
+                    }
+                }
+            }
+        }
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen">
-    <nav class="bg-gray-800 border-b border-gray-700">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
-                    <a href="/" class="flex items-center">
-                        <span class="text-xl font-bold text-indigo-400">Web3 Alert</span>
+<body class="min-h-screen flex flex-col">
+    <nav class="bg-cyber-darker border-b-2 border-cyber-cyan relative overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-r from-transparent via-cyber-cyan to-transparent opacity-10 animate-pulse"></div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="flex items-center justify-between h-20">
+                <div class="flex items-center space-x-12">
+                    <a href="/" class="flex items-center group">
+                        <div class="relative">
+                            <span class="text-2xl font-display font-bold text-cyber-cyan tracking-tight uppercase glitch" data-text="W3ALERT">
+                                W3ALERT
+                            </span>
+                            <div class="absolute -bottom-1 left-0 h-0.5 w-full bg-gradient-to-r from-cyber-cyan to-cyber-green"></div>
+                        </div>
                     </a>
-                    <div class="ml-10 flex items-baseline space-x-4">
-                        <a href="/" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white">
-                            Dashboard
+                    <div class="flex items-baseline space-x-1">
+                        <a href="/" class="nav-link px-4 py-2 text-sm font-bold text-cyber-gray-400 hover:text-cyber-cyan">
+                            [DASH]
                         </a>
-                        <a href="/tokens" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white">
-                            Tokens
+                        <a href="/tokens" class="nav-link px-4 py-2 text-sm font-bold text-cyber-gray-400 hover:text-cyber-cyan">
+                            [TOKENS]
                         </a>
-                        <a href="/telegram" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white">
-                            Telegram
+                        <a href="/telegram" class="nav-link px-4 py-2 text-sm font-bold text-cyber-cyan hover:text-cyber-green">
+                            [TELEGRAM]
                         </a>
                     </div>
                 </div>
-                <div class="flex items-center">
-                    <span class="text-sm text-gray-400" id="connection-status">
-                        <span class="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                        Connected
-                    </span>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2 px-4 py-2 bg-cyber-gray-900 border border-cyber-gray-700" id="connection-status">
+                        <span class="inline-block w-2 h-2 bg-cyber-green rounded-full status-pulse"></span>
+                        <span class="text-xs font-bold text-cyber-green uppercase tracking-wider">ONLINE</span>
+                    </div>
                 </div>
             </div>
         </div>
+        <div class="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-cyber-cyan to-transparent animate-pulse"></div>
     </nav>
 
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div id="alert-container"></div>
+    <div id="alert-container" class="fixed top-24 right-6 z-50 max-w-md space-y-3"></div>
+
+    <main class="flex-1 max-w-7xl mx-auto w-full py-8 px-4 sm:px-6 lg:px-8">
         {{embed}}
     </main>
 
-    <footer class="bg-gray-800 border-t border-gray-700 mt-auto">
-        <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-            <p class="text-center text-sm text-gray-400">
-                Web3 Alert Bot &copy; 2024
-            </p>
+    <footer class="bg-cyber-darker border-t border-cyber-gray-800 mt-auto">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="text-xs font-bold text-cyber-gray-500 uppercase tracking-widest">
+                        [SYS_STATUS]
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-1 h-1 bg-cyber-green animate-pulse"></div>
+                        <div class="w-1 h-1 bg-cyber-cyan animate-pulse" style="animation-delay: 0.2s;"></div>
+                        <div class="w-1 h-1 bg-cyber-amber animate-pulse" style="animation-delay: 0.4s;"></div>
+                    </div>
+                </div>
+                <div class="text-xs text-cyber-gray-600 font-mono">
+                    <span class="text-cyber-cyan">v1.0.0</span> | BUILD_<span class="text-cyber-green">2024</span>
+                </div>
+            </div>
         </div>
     </footer>
 

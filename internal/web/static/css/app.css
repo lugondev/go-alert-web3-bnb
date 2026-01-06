@@ -1,36 +1,402 @@
-/* Web3 Alert - Custom Styles */
+/* Web3 Alert - Terminal Brutalism Edition */
 
-/* Custom scrollbar */
+/* ============================================
+   TYPOGRAPHY & FONTS
+   ============================================ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap');
+
+:root {
+    /* Color Palette - Cyber Terminal */
+    --color-black: #0a0e14;
+    --color-dark: #0d1117;
+    --color-darker: #050508;
+    --color-gray-900: #16181d;
+    --color-gray-800: #1c1f26;
+    --color-gray-700: #23262e;
+    --color-gray-600: #2d3139;
+    --color-gray-500: #4a4d56;
+    --color-gray-400: #6b6e76;
+    --color-gray-300: #9ea1a9;
+    
+    /* Neon Accents */
+    --color-cyan: #00f0ff;
+    --color-cyan-glow: rgba(0, 240, 255, 0.5);
+    --color-green: #39ff14;
+    --color-green-glow: rgba(57, 255, 20, 0.5);
+    --color-amber: #ffb627;
+    --color-amber-glow: rgba(255, 182, 39, 0.5);
+    --color-red: #ff3366;
+    --color-red-glow: rgba(255, 51, 102, 0.5);
+    --color-purple: #b967ff;
+    
+    /* Typography */
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --font-display: 'Space Grotesk', -apple-system, sans-serif;
+}
+
+* {
+    font-family: var(--font-mono);
+}
+
+body {
+    background-color: var(--color-black);
+    color: var(--color-gray-300);
+    letter-spacing: -0.02em;
+    position: relative;
+}
+
+/* Terminal scan-line effect */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 240, 255, 0.03) 0px,
+        transparent 1px,
+        transparent 2px,
+        rgba(0, 240, 255, 0.03) 3px
+    );
+    pointer-events: none;
+    z-index: 9999;
+    animation: scanline 8s linear infinite;
+}
+
+@keyframes scanline {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(100%); }
+}
+
+/* Noise texture overlay */
+body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='3.5' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0.6;
+}
+
+/* ============================================
+   CUSTOM SCROLLBAR - CYBER STYLE
+   ============================================ */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-    background: #1f2937;
+    background: var(--color-darker);
+    border-left: 1px solid var(--color-gray-800);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #4b5563;
-    border-radius: 4px;
+    background: linear-gradient(180deg, var(--color-cyan) 0%, var(--color-green) 100%);
+    border-radius: 0;
+    box-shadow: 0 0 10px var(--color-cyan-glow);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: var(--color-cyan);
+    box-shadow: 0 0 15px var(--color-cyan-glow);
 }
 
-/* Table styles */
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
 .bg-gray-750 {
-    background-color: #2d3748;
+    background-color: var(--color-gray-700);
 }
 
-/* Form focus styles */
+.text-cyber-cyan {
+    color: var(--color-cyan);
+}
+
+.text-cyber-green {
+    color: var(--color-green);
+}
+
+.border-cyber {
+    border-color: var(--color-gray-700);
+    border-width: 2px;
+    border-style: solid;
+}
+
+/* ============================================
+   FORM ELEMENTS - TERMINAL STYLE
+   ============================================ */
 input:focus, select:focus, textarea:focus {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 0 2px var(--color-cyan), 0 0 20px var(--color-cyan-glow);
+    border-color: var(--color-cyan);
+    background-color: var(--color-darker);
 }
 
-/* Toggle switch animation */
+input, select, textarea {
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input::placeholder, textarea::placeholder {
+    color: var(--color-gray-500);
+    opacity: 0.7;
+}
+
+/* ============================================
+   BUTTONS - CYBER BRUTALISM
+   ============================================ */
+button {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
+/* Glitch effect on primary buttons */
+.btn-primary {
+    background: var(--color-cyan);
+    color: var(--color-black);
+    box-shadow: 0 0 20px var(--color-cyan-glow);
+}
+
+.btn-primary:hover:not(:disabled) {
+    box-shadow: 0 0 30px var(--color-cyan-glow), 0 0 60px var(--color-cyan-glow);
+    animation: glitch-btn 0.3s infinite;
+}
+
+@keyframes glitch-btn {
+    0%, 100% { transform: translateY(-1px) translateX(0); }
+    25% { transform: translateY(-1px) translateX(-2px); }
+    75% { transform: translateY(-1px) translateX(2px); }
+}
+
+/* ============================================
+   CARDS - BRUTALIST DESIGN
+   ============================================ */
+.card-cyber {
+    background: var(--color-dark);
+    border: 2px solid var(--color-gray-800);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-cyber::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-cyan), transparent);
+    animation: scan-horizontal 3s linear infinite;
+}
+
+@keyframes scan-horizontal {
+    0% { left: -100%; }
+    100% { left: 200%; }
+}
+
+.card-cyber:hover {
+    border-color: var(--color-cyan);
+    box-shadow: 0 0 30px var(--color-cyan-glow);
+    transform: translateY(-4px);
+}
+
+/* ============================================
+   TABLES - TERMINAL GRID
+   ============================================ */
+table {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+thead th {
+    background: var(--color-darker);
+    color: var(--color-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    border-bottom: 2px solid var(--color-cyan);
+    padding: 1rem 1.5rem;
+    text-align: left;
+}
+
+tbody tr {
+    background: var(--color-dark);
+    border-bottom: 1px solid var(--color-gray-800);
+    transition: all 0.2s ease;
+}
+
+tbody tr:hover {
+    background: var(--color-gray-900);
+    box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.1);
+    position: relative;
+}
+
+tbody tr:hover::before {
+    content: '>';
+    position: absolute;
+    left: 0.5rem;
+    color: var(--color-cyan);
+    font-weight: bold;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+tbody td {
+    padding: 1rem 1.5rem;
+}
+
+/* ============================================
+   LOADING SPINNER - DATA STREAM
+   ============================================ */
+.spinner {
+    border: 3px solid var(--color-gray-800);
+    border-top: 3px solid var(--color-cyan);
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    animation: spin 0.8s linear infinite;
+    box-shadow: 0 0 20px var(--color-cyan-glow);
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ============================================
+   ALERTS - SYSTEM NOTIFICATIONS
+   ============================================ */
+.alert-enter {
+    animation: alert-slide-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.alert-exit {
+    animation: alert-slide-out 0.3s cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes alert-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(100%) translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) translateY(0);
+    }
+}
+
+@keyframes alert-slide-out {
+    from {
+        opacity: 1;
+        transform: translateX(0) translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%) translateY(-10px);
+    }
+}
+
+/* ============================================
+   CODE BLOCKS
+   ============================================ */
+code {
+    font-family: var(--font-mono);
+    background: var(--color-darker);
+    color: var(--color-green);
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--color-gray-800);
+    border-radius: 2px;
+}
+
+/* ============================================
+   NAVIGATION - BRUTALIST HEADER
+   ============================================ */
+.nav-link {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 0.2s ease;
+    border-bottom: 2px solid transparent;
+}
+
+.nav-link.active {
+    background-color: transparent;
+    color: var(--color-cyan);
+    border-bottom-color: var(--color-cyan);
+    text-shadow: 0 0 10px var(--color-cyan-glow);
+}
+
+.nav-link:hover {
+    color: var(--color-cyan);
+    background: var(--color-gray-900);
+}
+
+/* ============================================
+   CHECKBOXES & TOGGLES - CYBER SWITCHES
+   ============================================ */
+input[type="checkbox"] {
+    cursor: pointer;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--color-gray-600);
+    background: var(--color-darker);
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+input[type="checkbox"]:checked {
+    background-color: var(--color-cyan);
+    border-color: var(--color-cyan);
+    box-shadow: 0 0 10px var(--color-cyan-glow);
+}
+
+input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--color-black);
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* Toggle switches */
 .toggle-switch {
     transition: background-color 0.2s ease-in-out;
 }
@@ -39,110 +405,102 @@ input:focus, select:focus, textarea:focus {
     transition: transform 0.2s ease-in-out;
 }
 
-/* Card hover effect */
-.card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+/* ============================================
+   MODAL OVERLAY
+   ============================================ */
+.modal-overlay {
+    background-color: rgba(10, 14, 20, 0.95);
+    backdrop-filter: blur(8px);
 }
 
-/* Loading spinner */
-.spinner {
-    border: 3px solid #374151;
-    border-top: 3px solid #6366f1;
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    animation: spin 1s linear infinite;
+/* ============================================
+   STATUS INDICATORS - BREATHING EFFECT
+   ============================================ */
+.status-pulse {
+    animation: pulse-cyber 2s ease-in-out infinite;
+    box-shadow: 0 0 10px currentColor;
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* Alert animations */
-.alert-enter {
-    animation: slideIn 0.3s ease-out;
-}
-
-.alert-exit {
-    animation: slideOut 0.3s ease-in;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
+@keyframes pulse-cyber {
+    0%, 100% {
         opacity: 1;
-        transform: translateY(0);
+        transform: scale(1);
+        box-shadow: 0 0 10px currentColor;
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(1.1);
+        box-shadow: 0 0 20px currentColor;
     }
 }
 
-@keyframes slideOut {
-    from {
-        opacity: 1;
-        transform: translateY(0);
-    }
-    to {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
+/* ============================================
+   BADGES & TAGS
+   ============================================ */
+.badge-cyber {
+    background: var(--color-gray-900);
+    border: 1px solid var(--color-gray-700);
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-block;
 }
 
-/* Code block styles */
-code {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+/* ============================================
+   GLITCH TEXT EFFECT
+   ============================================ */
+.glitch {
+    position: relative;
+    display: inline-block;
 }
 
-/* Responsive table */
+.glitch:hover::before,
+.glitch:hover::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.glitch:hover::before {
+    animation: glitch-1 0.3s infinite;
+    color: var(--color-cyan);
+    z-index: -1;
+}
+
+.glitch:hover::after {
+    animation: glitch-2 0.3s infinite;
+    color: var(--color-red);
+    z-index: -2;
+}
+
+@keyframes glitch-1 {
+    0%, 100% { transform: translate(0); }
+    25% { transform: translate(-2px, 2px); }
+    75% { transform: translate(2px, -2px); }
+}
+
+@keyframes glitch-2 {
+    0%, 100% { transform: translate(0); }
+    25% { transform: translate(2px, -2px); }
+    75% { transform: translate(-2px, 2px); }
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
 @media (max-width: 768px) {
     .table-responsive {
         display: block;
         overflow-x: auto;
         white-space: nowrap;
     }
-}
-
-/* Active nav link */
-.nav-link.active {
-    background-color: #374151;
-    color: #fff;
-}
-
-/* Button states */
-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Checkbox custom style */
-input[type="checkbox"] {
-    cursor: pointer;
-}
-
-input[type="checkbox"]:checked {
-    background-color: #6366f1;
-    border-color: #6366f1;
-}
-
-/* Modal overlay */
-.modal-overlay {
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(4px);
-}
-
-/* Pulse animation for status indicators */
-.status-pulse {
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
+    
+    body::before {
+        animation: scanline 4s linear infinite;
     }
 }

@@ -4,16 +4,16 @@ A Golang application that monitors blockchain events via WebSocket and sends ale
 
 ## Features
 
-- WebSocket client with auto-reconnection
-- Telegram notifications with rate limiting
-- Structured logging (JSON/Text format)
-- Event filtering and processing
-- Redis pub/sub for cluster coordination
-- Distributed locking for event deduplication
-- Prevents duplicate notifications when autoscaling
-- Docker & Docker Compose support
-- Settings Web UI for configuration
-- Graceful shutdown
+-   WebSocket client with auto-reconnection
+-   Telegram notifications with rate limiting
+-   Structured logging (JSON/Text format)
+-   Event filtering and processing
+-   Redis pub/sub for cluster coordination
+-   Distributed locking for event deduplication
+-   Prevents duplicate notifications when autoscaling
+-   Docker & Docker Compose support
+-   Settings Web UI for configuration
+-   Graceful shutdown
 
 ## Architecture
 
@@ -43,9 +43,9 @@ A Golang application that monitors blockchain events via WebSocket and sends ale
 
 ### Prerequisites
 
-- Go 1.23+
-- Redis 6+
-- Docker (optional)
+-   Go 1.23+
+-   Redis 6+
+-   Docker (optional)
 
 ### Installation
 
@@ -75,6 +75,9 @@ cp .env.example .env
 ```
 
 Settings UI available at: http://localhost:8080
+
+![Home](./images/home.png)
+![Settings](./images/setting.png)
 
 ### Running Locally
 
@@ -145,33 +148,34 @@ make tidy          # Tidy go.mod
 
 ### Environment Variables
 
-| Variable              | Description              | Default                                   |
-| --------------------- | ------------------------ | ----------------------------------------- |
-| `TELEGRAM_BOT_TOKEN`  | Telegram bot token       | **Required**                              |
-| `TELEGRAM_CHAT_ID`    | Telegram chat ID         | **Required**                              |
-| `WS_URL`              | WebSocket URL            | `wss://nbstream.binance.com/w3w/stream`   |
-| `REDIS_HOST`          | Redis host               | `localhost`                               |
-| `REDIS_PORT`          | Redis port               | `6379`                                    |
-| `REDIS_PASSWORD`      | Redis password           | ``                                        |
-| `LOG_LEVEL`           | Log level                | `info`                                    |
-| `LOG_FORMAT`          | Log format (json/text)   | `json`                                    |
+| Variable             | Description            | Default                                 |
+| -------------------- | ---------------------- | --------------------------------------- |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token     | **Required**                            |
+| `TELEGRAM_CHAT_ID`   | Telegram chat ID       | **Required**                            |
+| `WS_URL`             | WebSocket URL          | `wss://nbstream.binance.com/w3w/stream` |
+| `REDIS_HOST`         | Redis host             | `localhost`                             |
+| `REDIS_PORT`         | Redis port             | `6379`                                  |
+| `REDIS_PASSWORD`     | Redis password         | ``                                      |
+| `LOG_LEVEL`          | Log level              | `info`                                  |
+| `LOG_FORMAT`         | Log format (json/text) | `json`                                  |
 
 ### YAML Configuration
 
 See `configs/config.yaml` for full configuration options including:
-- WebSocket settings (reconnect, ping/pong)
-- Telegram rate limiting
-- Redis connection pooling
-- Token subscriptions
+
+-   WebSocket settings (reconnect, ping/pong)
+-   Telegram rate limiting
+-   Redis connection pooling
+-   Token subscriptions
 
 ## W3W Stream Channels
 
-| Stream Type  | Format                                  | Example                               |
-| ------------ | --------------------------------------- | ------------------------------------- |
-| Ticker 24h   | `w3w@<contract>@<chain>@ticker24h`      | `w3w@So111...@CT_501@ticker24h`       |
-| Holders      | `w3w@<contract>@<chain>@holders`        | `w3w@pump...@CT_501@holders`          |
-| Transactions | `tx@<chain_id>_<contract>`              | `tx@16_pump...`                       |
-| Kline        | `kl@<chain_id>@<contract>@<interval>`   | `kl@16@pump...@5m`                    |
+| Stream Type  | Format                                | Example                         |
+| ------------ | ------------------------------------- | ------------------------------- |
+| Ticker 24h   | `w3w@<contract>@<chain>@ticker24h`    | `w3w@So111...@CT_501@ticker24h` |
+| Holders      | `w3w@<contract>@<chain>@holders`      | `w3w@pump...@CT_501@holders`    |
+| Transactions | `tx@<chain_id>_<contract>`            | `tx@16_pump...`                 |
+| Kline        | `kl@<chain_id>@<contract>@<interval>` | `kl@16@pump...@5m`              |
 
 **Chain Types:** `CT_501` (Solana), `56` (BSC), `8453` (Base)
 
@@ -247,22 +251,22 @@ Ensure all pods point to the same Redis instance for deduplication to work.
 
 ## Redis Keys
 
-| Pattern                  | Purpose                         | TTL  |
-| ------------------------ | ------------------------------- | ---- |
-| `event:lock:{hash}`      | Distributed lock                | 30s  |
-| `event:processed:{hash}` | Processed marker                | 5m   |
-| `ratelimit:{key}`        | Rate limit data                 | 2min |
-| `settings:*`             | Token/Telegram settings         | -    |
+| Pattern                  | Purpose                 | TTL  |
+| ------------------------ | ----------------------- | ---- |
+| `event:lock:{hash}`      | Distributed lock        | 30s  |
+| `event:processed:{hash}` | Processed marker        | 5m   |
+| `ratelimit:{key}`        | Rate limit data         | 2min |
+| `settings:*`             | Token/Telegram settings | -    |
 
 ## Dependencies
 
-| Package                        | Description         |
-| ------------------------------ | ------------------- |
-| `github.com/gorilla/websocket` | WebSocket client    |
-| `github.com/redis/go-redis/v9` | Redis client        |
-| `github.com/charmbracelet/log` | Structured logging  |
-| `github.com/google/uuid`       | UUID generation     |
-| `gopkg.in/yaml.v3`             | YAML configuration  |
+| Package                        | Description        |
+| ------------------------------ | ------------------ |
+| `github.com/gorilla/websocket` | WebSocket client   |
+| `github.com/redis/go-redis/v9` | Redis client       |
+| `github.com/charmbracelet/log` | Structured logging |
+| `github.com/google/uuid`       | UUID generation    |
+| `gopkg.in/yaml.v3`             | YAML configuration |
 
 ## License
 

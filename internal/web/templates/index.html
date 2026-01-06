@@ -1,176 +1,194 @@
-<div class="px-4 py-6 sm:px-0">
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white">Dashboard</h1>
-        <p class="mt-2 text-gray-400">Manage your Web3 alerts and notifications</p>
+<div class="space-y-8">
+    <div class="flex items-start justify-between">
+        <div class="space-y-2">
+            <div class="flex items-center space-x-3">
+                <h1 class="text-4xl font-display font-bold text-white tracking-tight">[DASHBOARD]</h1>
+                <div class="flex space-x-1">
+                    <div class="w-2 h-2 bg-cyber-cyan rounded-full animate-pulse"></div>
+                    <div class="w-2 h-2 bg-cyber-green rounded-full animate-pulse" style="animation-delay: 0.15s;"></div>
+                    <div class="w-2 h-2 bg-cyber-amber rounded-full animate-pulse" style="animation-delay: 0.3s;"></div>
+                </div>
+            </div>
+            <p class="text-sm text-cyber-gray-400 font-mono uppercase tracking-wide">System monitoring & alert management</p>
+        </div>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <!-- Telegram Status -->
-        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-sm text-gray-400">Telegram</p>
-                    <p class="text-2xl font-bold text-white">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="card-cyber rounded-none p-6 relative group">
+            <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-cyber-cyan to-transparent"></div>
+            <div class="flex items-start justify-between mb-4">
+                <div class="space-y-3">
+                    <div class="text-xs font-bold text-cyber-gray-500 uppercase tracking-widest">[TELEGRAM_STATUS]</div>
+                    <div class="text-3xl font-display font-bold">
                         {{if .Telegram.Enabled}}
-                        <span class="text-green-400">Enabled</span>
+                        <span class="text-cyber-green">ACTIVE</span>
                         {{else}}
-                        <span class="text-red-400">Disabled</span>
+                        <span class="text-cyber-red">OFFLINE</span>
                         {{end}}
-                    </p>
+                    </div>
                 </div>
-                <div class="p-3 bg-indigo-600 rounded-full">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="p-3 bg-cyber-darker border-2 border-cyber-cyan relative overflow-hidden">
+                    <svg class="w-8 h-8 text-cyber-cyan relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
                     </svg>
+                    <div class="absolute inset-0 bg-cyber-cyan opacity-20 group-hover:animate-pulse"></div>
                 </div>
             </div>
-            <a href="/telegram" class="mt-4 inline-block text-sm text-indigo-400 hover:text-indigo-300">
-                Configure &rarr;
+            <a href="/telegram" class="inline-flex items-center text-xs font-bold text-cyber-cyan hover:text-cyber-green uppercase tracking-wider transition-colors group">
+                <span class="mr-2">CONFIGURE</span>
+                <span class="group-hover:translate-x-1 transition-transform">&gt;&gt;</span>
             </a>
         </div>
 
-        <!-- Tokens Count -->
-        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-sm text-gray-400">Active Tokens</p>
-                    <p class="text-2xl font-bold text-white">{{len .Tokens}}</p>
+        <div class="card-cyber rounded-none p-6 relative group">
+            <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-cyber-green to-transparent"></div>
+            <div class="flex items-start justify-between mb-4">
+                <div class="space-y-3">
+                    <div class="text-xs font-bold text-cyber-gray-500 uppercase tracking-widest">[ACTIVE_TOKENS]</div>
+                    <div class="text-5xl font-display font-bold text-white">{{len .Tokens}}</div>
                 </div>
-                <div class="p-3 bg-green-600 rounded-full">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="p-3 bg-cyber-darker border-2 border-cyber-green relative overflow-hidden">
+                    <svg class="w-8 h-8 text-cyber-green relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
+                    <div class="absolute inset-0 bg-cyber-green opacity-20 group-hover:animate-pulse"></div>
                 </div>
             </div>
-            <a href="/tokens" class="mt-4 inline-block text-sm text-indigo-400 hover:text-indigo-300">
-                Manage tokens &rarr;
+            <a href="/tokens" class="inline-flex items-center text-xs font-bold text-cyber-green hover:text-cyber-cyan uppercase tracking-wider transition-colors group">
+                <span class="mr-2">MANAGE</span>
+                <span class="group-hover:translate-x-1 transition-transform">&gt;&gt;</span>
             </a>
         </div>
 
-        <!-- Active Streams -->
-        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-sm text-gray-400">Active Streams</p>
-                    <p class="text-2xl font-bold text-white" id="stream-count">-</p>
+        <div class="card-cyber rounded-none p-6 relative group">
+            <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-cyber-amber to-transparent"></div>
+            <div class="flex items-start justify-between mb-4">
+                <div class="space-y-3">
+                    <div class="text-xs font-bold text-cyber-gray-500 uppercase tracking-widest">[DATA_STREAMS]</div>
+                    <div class="text-5xl font-display font-bold text-white" id="stream-count">--</div>
                 </div>
-                <div class="p-3 bg-purple-600 rounded-full">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="p-3 bg-cyber-darker border-2 border-cyber-amber relative overflow-hidden">
+                    <svg class="w-8 h-8 text-cyber-amber relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                     </svg>
+                    <div class="absolute inset-0 bg-cyber-amber opacity-20 group-hover:animate-pulse"></div>
                 </div>
             </div>
-            <p class="mt-4 text-sm text-gray-400">Real-time data feeds</p>
+            <div class="text-xs text-cyber-gray-500 font-mono uppercase tracking-wide">Real-time monitoring</div>
         </div>
     </div>
 
-    <!-- Recent Tokens -->
-    <div class="bg-gray-800 rounded-lg border border-gray-700">
-        <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-white">Configured Tokens</h2>
-            <a href="/tokens/new" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">
-                Add Token
+    <div class="card-cyber rounded-none border-2 border-cyber-gray-800 overflow-hidden">
+        <div class="px-6 py-4 bg-cyber-darker border-b-2 border-cyber-cyan flex items-center justify-between relative overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-r from-cyber-cyan/10 to-transparent"></div>
+            <h2 class="text-lg font-display font-bold text-white uppercase tracking-wide relative z-10">[CONFIGURED_TOKENS]</h2>
+            <a href="/tokens/new" class="px-4 py-2 bg-cyber-cyan text-cyber-black font-bold text-xs uppercase tracking-wider hover:bg-cyber-green hover:shadow-lg hover:shadow-cyber-green/50 transition-all relative z-10 btn-primary">
+                + ADD_TOKEN
             </a>
         </div>
+        
+        {{if .Tokens}}
         <div class="overflow-x-auto">
-            {{if .Tokens}}
             <table class="w-full">
-                <thead class="bg-gray-750">
+                <thead>
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Token</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Chain</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Streams</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notify</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                        <th class="px-6 py-4 text-left text-xs font-bold text-cyber-cyan uppercase tracking-wider border-b-2 border-cyber-cyan">[TOKEN]</th>
+                        <th class="px-6 py-4 text-left text-xs font-bold text-cyber-cyan uppercase tracking-wider border-b-2 border-cyber-cyan">[CHAIN]</th>
+                        <th class="px-6 py-4 text-left text-xs font-bold text-cyber-cyan uppercase tracking-wider border-b-2 border-cyber-cyan">[STREAMS]</th>
+                        <th class="px-6 py-4 text-left text-xs font-bold text-cyber-cyan uppercase tracking-wider border-b-2 border-cyber-cyan">[NOTIFY]</th>
+                        <th class="px-6 py-4 text-right text-xs font-bold text-cyber-cyan uppercase tracking-wider border-b-2 border-cyber-cyan">[ACTIONS]</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-700">
+                <tbody class="divide-y divide-cyber-gray-800">
                     {{range .Tokens}}
-                    <tr class="hover:bg-gray-750">
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="flex items-center">
-                                <div>
-                                    <div class="text-sm font-medium text-white">
-                                        {{if .Name}}{{.Name}}{{else}}{{.Address | printf "%.8s..."}}{{end}}
-                                    </div>
-                                    <div class="text-xs text-gray-400 font-mono">{{.Address | printf "%.16s..."}}</div>
+                    <tr class="hover:bg-cyber-gray-900 transition-all group relative">
+                        <td class="px-6 py-4">
+                            <div class="space-y-1">
+                                <div class="text-sm font-bold text-white">
+                                    {{if .Name}}{{.Name}}{{else}}{{.Address | printf "%.8s..."}}{{end}}
                                 </div>
+                                <div class="text-xs text-cyber-gray-500 font-mono">{{.Address | printf "%.16s..."}}</div>
                             </div>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="px-2 py-1 text-xs rounded-full 
-                                {{if eq .ChainType "CT_501"}}bg-purple-900 text-purple-300
-                                {{else if eq .ChainType "56"}}bg-yellow-900 text-yellow-300
-                                {{else}}bg-blue-900 text-blue-300{{end}}">
+                        <td class="px-6 py-4">
+                            <span class="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wider border
+                                {{if eq .ChainType "CT_501"}}bg-cyber-purple/20 text-cyber-purple border-cyber-purple
+                                {{else if eq .ChainType "56"}}bg-cyber-amber/20 text-cyber-amber border-cyber-amber
+                                {{else}}bg-cyber-cyan/20 text-cyber-cyan border-cyber-cyan{{end}}">
                                 {{.ChainName}}
                             </span>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
+                        <td class="px-6 py-4">
                             <div class="flex flex-wrap gap-1">
                                 {{range .Streams}}
-                                <span class="px-2 py-0.5 text-xs bg-gray-700 text-gray-300 rounded">{{.}}</span>
+                                <span class="px-2 py-1 text-xs bg-cyber-gray-800 text-cyber-gray-400 border border-cyber-gray-700 font-mono">{{.}}</span>
                                 {{end}}
                             </div>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
+                        <td class="px-6 py-4">
                             {{if .NotifyEnabled}}
-                            <span class="text-green-400">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                                </svg>
-                            </span>
+                            <div class="flex items-center space-x-2">
+                                <div class="w-2 h-2 bg-cyber-green rounded-full status-pulse"></div>
+                                <span class="text-xs font-bold text-cyber-green uppercase">ON</span>
+                            </div>
                             {{else}}
-                            <span class="text-gray-500">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
-                                </svg>
-                            </span>
+                            <div class="flex items-center space-x-2">
+                                <div class="w-2 h-2 bg-cyber-gray-600 rounded-full"></div>
+                                <span class="text-xs font-bold text-cyber-gray-600 uppercase">OFF</span>
+                            </div>
                             {{end}}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm">
-                            <a href="/tokens/{{.ID}}" class="text-indigo-400 hover:text-indigo-300 mr-3">Edit</a>
-                            <button onclick="deleteToken('{{.ID}}')" class="text-red-400 hover:text-red-300">Delete</button>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end space-x-4">
+                                <a href="/tokens/{{.ID}}" class="text-xs font-bold text-cyber-cyan hover:text-cyber-green uppercase tracking-wide transition-colors">EDIT</a>
+                                <button onclick="deleteToken('{{.ID}}')" class="text-xs font-bold text-cyber-red hover:text-white uppercase tracking-wide transition-colors">DELETE</button>
+                            </div>
                         </td>
                     </tr>
                     {{end}}
                 </tbody>
             </table>
-            {{else}}
-            <div class="px-6 py-12 text-center">
-                <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        </div>
+        {{else}}
+        <div class="px-6 py-16 text-center bg-cyber-dark relative overflow-hidden">
+            <div class="absolute inset-0 opacity-5">
+                <div class="absolute inset-0 bg-gradient-to-br from-cyber-cyan via-transparent to-cyber-green"></div>
+            </div>
+            <div class="relative z-10">
+                <svg class="mx-auto h-16 w-16 text-cyber-gray-700 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <p class="mt-4 text-gray-400">No tokens configured yet</p>
-                <a href="/tokens/new" class="mt-4 inline-block px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
-                    Add your first token
+                <p class="text-cyber-gray-500 font-bold uppercase tracking-wide mb-6">[NO_TOKENS_CONFIGURED]</p>
+                <a href="/tokens/new" class="inline-block px-6 py-3 bg-cyber-cyan text-cyber-black font-bold text-xs uppercase tracking-wider hover:bg-cyber-green hover:shadow-lg hover:shadow-cyber-green/50 transition-all btn-primary">
+                    + ADD_FIRST_TOKEN
                 </a>
             </div>
-            {{end}}
         </div>
+        {{end}}
     </div>
 </div>
 
 <script>
-// Fetch stream count
 fetch('/api/subscriptions')
     .then(res => res.json())
     .then(data => {
-        document.getElementById('stream-count').textContent = data.count || 0;
+        const countEl = document.getElementById('stream-count');
+        const count = data.count || 0;
+        countEl.textContent = String(count).padStart(2, '0');
     })
     .catch(() => {
-        document.getElementById('stream-count').textContent = '0';
+        document.getElementById('stream-count').textContent = '00';
     });
 
 function deleteToken(id) {
-    if (!confirm('Are you sure you want to delete this token?')) return;
+    if (!confirm('[CONFIRM] Delete this token?')) return;
     
     fetch('/api/tokens/' + id, { method: 'DELETE' })
         .then(res => {
             if (res.ok) {
                 location.reload();
             } else {
-                alert('Failed to delete token');
+                alert('[ERROR] Failed to delete token');
             }
         });
 }

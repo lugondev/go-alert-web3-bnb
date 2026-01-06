@@ -1,12 +1,15 @@
-<div class="px-4 py-6 sm:px-0">
-    <div class="mb-8">
-        <a href="/tokens" class="text-indigo-400 hover:text-indigo-300 text-sm">
-            &larr; Back to Tokens
-        </a>
-        <h1 class="text-3xl font-bold text-white mt-4">{{.Title}}</h1>
+<div class="space-y-8">
+    <div class="flex items-center justify-between">
+        <div class="space-y-2">
+            <a href="/tokens" class="text-xs font-bold text-cyber-cyan hover:text-cyber-green uppercase tracking-wider inline-flex items-center space-x-2 transition-colors group">
+                <span class="group-hover:-translate-x-1 transition-transform">&lt;&lt;</span>
+                <span>BACK_TO_TOKENS</span>
+            </a>
+            <h1 class="text-4xl font-display font-bold text-white tracking-tight">{{.Title}}</h1>
+        </div>
     </div>
 
-    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div class="card-cyber rounded-none p-8 border-2 border-cyber-gray-800">
         <form 
             id="token-form"
             hx-post="{{if .IsNew}}/api/tokens{{else}}/api/tokens/{{.Token.ID}}{{end}}"
@@ -15,113 +18,122 @@
         >
             <div id="form-alert"></div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Token Address -->
-                <div class="md:col-span-2">
-                    <label for="address" class="block text-sm font-medium text-gray-300 mb-2">
-                        Token Address <span class="text-red-400">*</span>
-                    </label>
-                    <input
-                        type="text"
-                        name="address"
-                        id="address"
-                        value="{{.Token.Address}}"
-                        required
-                        placeholder="0x... or token address"
-                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
-                    >
+            <div class="space-y-8">
+                <div class="space-y-6">
+                    <div class="space-y-3">
+                        <label for="address" class="block text-xs font-bold text-cyber-cyan uppercase tracking-widest">
+                            [TOKEN_ADDRESS] <span class="text-cyber-red">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            name="address"
+                            id="address"
+                            value="{{.Token.Address}}"
+                            required
+                            placeholder="0x... or token contract address"
+                            class="w-full px-4 py-3 bg-cyber-darker border-2 border-cyber-gray-700 text-white placeholder-cyber-gray-600 focus:outline-none focus:border-cyber-cyan font-mono text-sm"
+                        >
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="space-y-3">
+                            <label for="chain_type" class="block text-xs font-bold text-cyber-cyan uppercase tracking-widest">
+                                [CHAIN] <span class="text-cyber-red">*</span>
+                            </label>
+                            <select
+                                name="chain_type"
+                                id="chain_type"
+                                required
+                                class="w-full px-4 py-3 bg-cyber-darker border-2 border-cyber-gray-700 text-white focus:outline-none focus:border-cyber-cyan font-mono text-sm"
+                            >
+                                {{range .ChainTypes}}
+                                <option value="{{.Value}}" {{if eq $.Token.ChainType .Value}}selected{{end}}>{{.Label}}</option>
+                                {{end}}
+                            </select>
+                        </div>
+
+                        <div class="space-y-3">
+                            <label for="name" class="block text-xs font-bold text-cyber-cyan uppercase tracking-widest">
+                                [TOKEN_NAME]
+                            </label>
+                            <input
+                                type="text"
+                                name="name"
+                                id="name"
+                                value="{{.Token.Name}}"
+                                placeholder="e.g., Bitcoin"
+                                class="w-full px-4 py-3 bg-cyber-darker border-2 border-cyber-gray-700 text-white placeholder-cyber-gray-600 focus:outline-none focus:border-cyber-cyan font-mono text-sm"
+                            >
+                        </div>
+
+                        <div class="space-y-3">
+                            <label for="symbol" class="block text-xs font-bold text-cyber-cyan uppercase tracking-widest">
+                                [SYMBOL]
+                            </label>
+                            <input
+                                type="text"
+                                name="symbol"
+                                id="symbol"
+                                value="{{.Token.Symbol}}"
+                                placeholder="e.g., BTC"
+                                class="w-full px-4 py-3 bg-cyber-darker border-2 border-cyber-gray-700 text-white placeholder-cyber-gray-600 focus:outline-none focus:border-cyber-cyan font-mono text-sm uppercase"
+                            >
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Chain Type -->
-                <div>
-                    <label for="chain_type" class="block text-sm font-medium text-gray-300 mb-2">
-                        Chain <span class="text-red-400">*</span>
-                    </label>
-                    <select
-                        name="chain_type"
-                        id="chain_type"
-                        required
-                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                        {{range .ChainTypes}}
-                        <option value="{{.Value}}" {{if eq $.Token.ChainType .Value}}selected{{end}}>{{.Label}}</option>
-                        {{end}}
-                    </select>
-                </div>
-
-                <!-- Token Name -->
-                <div>
-                    <label for="name" class="block text-sm font-medium text-gray-300 mb-2">
-                        Token Name
-                    </label>
-                    <input
-                        type="text"
-                        name="name"
-                        id="name"
-                        value="{{.Token.Name}}"
-                        placeholder="e.g., Bitcoin"
-                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                </div>
-
-                <!-- Token Symbol -->
-                <div>
-                    <label for="symbol" class="block text-sm font-medium text-gray-300 mb-2">
-                        Symbol
-                    </label>
-                    <input
-                        type="text"
-                        name="symbol"
-                        id="symbol"
-                        value="{{.Token.Symbol}}"
-                        placeholder="e.g., BTC"
-                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                </div>
-
-                <!-- Streams -->
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-300 mb-2">
-                        Data Streams
-                    </label>
-                    <p class="text-xs text-gray-400 mb-3">Select streams to subscribe and configure notifications for each stream</p>
+                <div class="space-y-4 p-6 bg-cyber-darker border-l-4 border-cyber-amber">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-bold text-cyber-amber uppercase tracking-widest">
+                            [DATA_STREAMS]
+                        </label>
+                        <p class="text-xs text-cyber-gray-500 font-mono">Select streams & configure notifications</p>
+                    </div>
+                    
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {{range .StreamTypes}}
-                        <div class="p-4 bg-gray-700 rounded-lg border border-gray-600 hover:border-indigo-500 transition-colors">
-                            <div class="flex items-start justify-between">
-                                <label class="flex items-start cursor-pointer flex-1">
+                        <div class="group p-4 bg-cyber-dark border-2 border-cyber-gray-700 hover:border-cyber-cyan transition-all relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-cyber-cyan to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            
+                            <div class="flex items-start justify-between space-x-4">
+                                <label class="flex items-start cursor-pointer flex-1 space-x-3">
                                     <input
                                         type="checkbox"
                                         name="streams"
                                         value="{{.Value}}"
                                         {{if index $.StreamMap .Value}}checked{{end}}
-                                        class="stream-checkbox mt-1 mr-3 h-4 w-4 text-indigo-600 bg-gray-700 border-gray-500 rounded focus:ring-indigo-500"
+                                        class="stream-checkbox mt-1 h-5 w-5 flex-shrink-0"
                                         data-stream="{{.Value}}"
                                         onchange="toggleStreamNotifyVisibility('{{.Value}}', this.checked)"
                                     >
-                                    <div>
-                                        <div class="text-sm font-medium text-white">{{.Label}}</div>
-                                        <div class="text-xs text-gray-400">{{.Description}}</div>
+                                    <div class="space-y-1 flex-1">
+                                        <div class="text-sm font-bold text-white uppercase tracking-wide">{{.Label}}</div>
+                                        <div class="text-xs text-cyber-gray-500 font-mono">{{.Description}}</div>
                                     </div>
                                 </label>
-                                <!-- Per-stream notify toggle -->
+
                                 <div 
-                                    class="stream-notify-toggle ml-3 flex items-center" 
+                                    class="stream-notify-toggle flex items-center space-x-2 flex-shrink-0" 
                                     id="notify-toggle-{{.Value}}"
                                     style="{{if not (index $.StreamMap .Value)}}display: none;{{end}}"
                                 >
-                                    <span class="text-xs text-gray-400 mr-2">Notify</span>
-                                    <label class="relative inline-flex items-center cursor-pointer">
+                                    <span class="text-xs text-cyber-gray-500 font-bold uppercase whitespace-nowrap">NOTIFY</span>
+                                    <button 
+                                        type="button"
+                                        class="relative inline-flex h-6 w-12 items-center rounded-none border-2 transition-all duration-200 focus:outline-none notify-switch {{if or (index $.StreamNotifyMap .Value) (and $.IsNew $.Token.NotifyEnabled)}}bg-cyber-green border-cyber-green{{else}}bg-cyber-gray-700 border-cyber-gray-700{{end}}"
+                                        data-stream="{{.Value}}"
+                                        onclick="toggleNotifySwitch(this, '{{.Value}}')"
+                                    >
+                                        <span class="inline-block h-4 w-4 transform bg-cyber-black transition-transform duration-200 {{if or (index $.StreamNotifyMap .Value) (and $.IsNew $.Token.NotifyEnabled)}}translate-x-7{{else}}translate-x-0.5{{end}}"></span>
                                         <input 
                                             type="checkbox" 
                                             name="stream_notify_{{.Value}}"
                                             value="true"
                                             {{if or (index $.StreamNotifyMap .Value) (and $.IsNew $.Token.NotifyEnabled)}}checked{{end}}
-                                            class="sr-only peer stream-notify-checkbox"
+                                            class="hidden stream-notify-checkbox"
                                             data-stream="{{.Value}}"
                                         >
-                                        <div class="w-9 h-5 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                                    </label>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -129,30 +141,29 @@
                     </div>
                 </div>
 
-                <!-- Notify Enabled -->
-                <div class="md:col-span-2">
-                    <label class="flex items-center">
-                        <input
-                            type="checkbox"
-                            name="notify_enabled"
-                            value="true"
-                            {{if .Token.NotifyEnabled}}checked{{end}}
-                            class="h-4 w-4 text-indigo-600 bg-gray-700 border-gray-500 rounded focus:ring-indigo-500"
-                        >
-                        <span class="ml-3 text-sm text-gray-300">Enable Telegram notifications for this token</span>
+                <div class="flex items-center space-x-4 p-4 bg-cyber-darker border-l-4 border-cyber-green">
+                    <input
+                        type="checkbox"
+                        name="notify_enabled"
+                        value="true"
+                        {{if .Token.NotifyEnabled}}checked{{end}}
+                        class="h-5 w-5"
+                    >
+                    <label class="text-sm font-bold text-white uppercase tracking-wide cursor-pointer">
+                        Enable Telegram notifications for this token
                     </label>
                 </div>
             </div>
 
-            <div class="mt-8 flex items-center justify-end gap-4">
-                <a href="/tokens" class="px-4 py-2 text-gray-400 hover:text-white">
-                    Cancel
+            <div class="mt-8 flex items-center justify-end gap-4 pt-6 border-t-2 border-cyber-gray-800">
+                <a href="/tokens" class="px-6 py-3 text-cyber-gray-400 hover:text-white font-bold text-xs uppercase tracking-wider transition-colors">
+                    [CANCEL]
                 </a>
                 <button
                     type="submit"
-                    class="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    class="px-8 py-3 bg-cyber-cyan text-cyber-black font-bold text-xs uppercase tracking-wider hover:bg-cyber-green hover:shadow-lg hover:shadow-cyber-green/50 transition-all btn-primary"
                 >
-                    {{if .IsNew}}Add Token{{else}}Save Changes{{end}}
+                    {{if .IsNew}}[ADD_TOKEN]{{else}}[SAVE_CHANGES]{{end}}
                 </button>
             </div>
         </form>
@@ -160,7 +171,6 @@
 </div>
 
 <script>
-// Toggle stream notify visibility based on stream checkbox
 function toggleStreamNotifyVisibility(streamValue, isChecked) {
     const notifyToggle = document.getElementById('notify-toggle-' + streamValue);
     if (notifyToggle) {
@@ -168,11 +178,44 @@ function toggleStreamNotifyVisibility(streamValue, isChecked) {
     }
 }
 
-// Sync global notify toggle with stream notify toggles
+function toggleNotifySwitch(button, streamValue) {
+    const checkbox = button.querySelector('.stream-notify-checkbox');
+    const thumb = button.querySelector('span');
+    
+    checkbox.checked = !checkbox.checked;
+    
+    if (checkbox.checked) {
+        button.classList.remove('bg-cyber-gray-700', 'border-cyber-gray-700');
+        button.classList.add('bg-cyber-green', 'border-cyber-green');
+        thumb.classList.remove('translate-x-0.5');
+        thumb.classList.add('translate-x-7');
+    } else {
+        button.classList.remove('bg-cyber-green', 'border-cyber-green');
+        button.classList.add('bg-cyber-gray-700', 'border-cyber-gray-700');
+        thumb.classList.remove('translate-x-7');
+        thumb.classList.add('translate-x-0.5');
+    }
+}
+
 document.querySelector('input[name="notify_enabled"]').addEventListener('change', function(e) {
     const notifyEnabled = e.target.checked;
-    document.querySelectorAll('.stream-notify-checkbox').forEach(checkbox => {
+    document.querySelectorAll('.notify-switch').forEach(button => {
+        const checkbox = button.querySelector('.stream-notify-checkbox');
+        const thumb = button.querySelector('span');
+        
         checkbox.checked = notifyEnabled;
+        
+        if (notifyEnabled) {
+            button.classList.remove('bg-cyber-gray-700', 'border-cyber-gray-700');
+            button.classList.add('bg-cyber-green', 'border-cyber-green');
+            thumb.classList.remove('translate-x-0.5');
+            thumb.classList.add('translate-x-7');
+        } else {
+            button.classList.remove('bg-cyber-green', 'border-cyber-green');
+            button.classList.add('bg-cyber-gray-700', 'border-cyber-gray-700');
+            thumb.classList.remove('translate-x-7');
+            thumb.classList.add('translate-x-0.5');
+        }
     });
 });
 
@@ -183,13 +226,11 @@ document.getElementById('token-form').addEventListener('submit', function(e) {
     const formData = new FormData(form);
     const isNew = {{.IsNew}};
     
-    // Collect streams
     const streams = [];
     form.querySelectorAll('input[name="streams"]:checked').forEach(cb => {
         streams.push(cb.value);
     });
     
-    // Collect per-stream notify settings
     const streamNotify = {};
     streams.forEach(stream => {
         const notifyCheckbox = form.querySelector('input[name="stream_notify_' + stream + '"]');
@@ -222,19 +263,20 @@ document.getElementById('token-form').addEventListener('submit', function(e) {
             window.location.href = '/tokens';
         } else {
             return res.json().then(data => {
-                showAlert('error', data.error || 'Failed to save token');
+                showAlert('error', '[ERROR] ' + (data.error || 'Failed to save token'));
             });
         }
     })
     .catch(err => {
-        showAlert('error', 'An error occurred');
+        showAlert('error', '[ERROR] Network error occurred');
     });
 });
 
 function showAlert(type, message) {
     const alertDiv = document.getElementById('form-alert');
+    const bgClass = type === 'error' ? 'bg-cyber-red/20 text-cyber-red border-cyber-red' : 'bg-cyber-green/20 text-cyber-green border-cyber-green';
     alertDiv.innerHTML = `
-        <div class="mb-4 p-4 rounded-md ${type === 'error' ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}">
+        <div class="mb-6 p-4 border-2 font-mono text-sm ${bgClass}">
             ${message}
         </div>
     `;
