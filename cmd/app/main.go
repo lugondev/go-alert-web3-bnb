@@ -270,6 +270,7 @@ func (app *Application) initializeServer(ctx context.Context) error {
 			RateLimitKey:    "telegram:notify",
 			RateLimitMax:    cfg.Redis.RateLimitMax,
 			RateLimitWindow: cfg.Redis.RateLimitWindow,
+			DebugStreams:    cfg.Logger.DebugStreams,
 		},
 	)
 
@@ -282,6 +283,7 @@ func (app *Application) initializeServer(ctx context.Context) error {
 		PongTimeout:       cfg.WebSocket.PongTimeout,
 		WriteTimeout:      cfg.WebSocket.WriteTimeout,
 		ReadTimeout:       cfg.WebSocket.ReadTimeout,
+		DebugStreams:      cfg.Logger.DebugStreams,
 	}, log)
 
 	// Set the event handler

@@ -280,16 +280,35 @@ func (f *Formatter) FormatW3WTransaction(txHash, txType, token0Addr, token1Addr,
 
 // FormatW3WTransactionWithTicker formats a W3W transaction event with optional ticker data
 func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, token1Addr, token0Symbol, token1Symbol string, amount0, amount1, valueUSD, token0Price, token1Price float64, platformID int, makerAddress string, tickerData TickerData) string {
-	// Determine emoji based on transaction type
+	// Determine emoji and action description based on swap direction
 	emoji := "🔄"
 	typeLabel := "Swap"
+	actionDescription := ""
+
+	// Determine which token is the focus based on ticker data availability
+	// If we have ticker data, that's likely our subscribed token
+	focusToken := token0Symbol
+	if tickerData != nil {
+		// We have ticker data, use that to determine focus
+		// This is our subscribed token
+		focusToken = token0Symbol // Assume ticker is for token0
+	}
+
+	// Build clear action description
 	switch txType {
 	case "buy":
 		emoji = "🟢"
 		typeLabel = "Buy"
+		// XXX -> Focus Token (someone bought focus token)
+		actionDescription = fmt.Sprintf("Bought %s with %s", token1Symbol, token0Symbol)
 	case "sell":
 		emoji = "🔴"
 		typeLabel = "Sell"
+		// Focus Token -> XXX (someone sold focus token)
+		actionDescription = fmt.Sprintf("Sold %s for %s", token0Symbol, token1Symbol)
+	default:
+		// Generic swap
+		actionDescription = fmt.Sprintf("%s → %s", token0Symbol, token1Symbol)
 	}
 
 	// Build explorer link based on platform
@@ -332,20 +351,26 @@ func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, t
 
 	// Build ticker info section if available
 	tickerInfo := ""
+	tickerTokenSymbol := ""
 	if tickerData != nil {
 		priceChangeEmoji := "📈"
 		if tickerData.GetPriceChange24h() < 0 {
 			priceChangeEmoji = "📉"
 		}
 
+		// Determine which token the ticker is for
+		// In most cases, ticker is for the subscribed token (token0 or token1)
+		tickerTokenSymbol = focusToken
+
 		tickerInfo = fmt.Sprintf(`
 
-📊 *Token Stats*
+📊 *%s Stats*
 *Price:* $%s
 *24h Change:* %s %.2f%%
 *Market Cap:* $%s
 *Volume 24h:* $%s
 *Liquidity:* $%s`,
+			tickerTokenSymbol,
 			formatPriceCompact(tickerData.GetPrice()),
 			priceChangeEmoji,
 			tickerData.GetPriceChange24h(),
@@ -355,30 +380,28 @@ func (f *Formatter) FormatW3WTransactionWithTicker(txHash, txType, token0Addr, t
 		)
 	}
 
-	return fmt.Sprintf(`%s *%s Transaction*
+	return fmt.Sprintf(`%s *%s*
 
+*Action:* %s
 *Value:* $%.2f%s
 
-*%s:* %.6f
-*%s:* %.6f
-
-*%s Price:* $%.6f
-*%s Price:* $%.6f%s
-
+*Amounts:*
+• %s: %.6f ($%.2f)
+• %s: %.6f ($%.2f)
+%s
 [View on %s](%s)
 *Time:* %s`,
 		emoji,
 		typeLabel,
+		actionDescription,
 		valueUSD,
 		makerInfo,
 		token0Symbol,
 		amount0,
+		amount0*token0Price,
 		token1Symbol,
 		amount1,
-		token0Symbol,
-		token0Price,
-		token1Symbol,
-		token1Price,
+		amount1*token1Price,
 		tickerInfo,
 		explorerName,
 		explorerLink,
@@ -604,4 +627,371 @@ func formatPriceCompact(price float64) string {
 		return fmt.Sprintf("%.6f", price)
 	}
 	return fmt.Sprintf("%.10f", price)
+}
+
+// MultiHopSwap interface to avoid circular import
+type MultiHopSwap interface {
+	GetSwapPath() []string
+	GetTotalAmounts() (inputAmount, outputAmount float64, inputSymbol, outputSymbol string)
+	IsMultiHop() bool
+	GetTxHash() string
+	GetTotalValueUSD() float64
+	GetPlatformID() int
+	GetMakerAddress() string
+	GetSwapCount() int
+}
+
+// TokenInfo represents information about a subscribed token in a swap
+type TokenInfo struct {
+	Address    string  // Token contract address
+	Symbol     string  // Token symbol (e.g., "ORE")
+	Role       string  // "source", "destination", "bridge"
+	Position   int     // Position in swap path
+	AmountIn   float64 // Amount received (for bridge tokens)
+	AmountOut  float64 // Amount sent (for bridge tokens)
+	PriceUSD   float64 // Token price in USD
+	FromToken  string  // Token swapped FROM (for destination role)
+	ToToken    string  // Token swapped TO (for source role)
+	BridgeFrom string  // Starting token (for bridge role)
+	BridgeTo   string  // Ending token (for bridge role)
+}
+
+// FormatMultiHopSwap formats a multi-hop swap transaction
+func (f *Formatter) FormatMultiHopSwap(multiHop MultiHopSwap, tickerData TickerData) string {
+	return f.FormatMultiHopSwapWithContext(multiHop, "", tickerData)
+}
+
+// FormatMultiHopSwapWithContext formats a multi-hop swap with subscribed token context
+// subscribedToken parameter is kept for backward compatibility but is deprecated
+// Use FormatMultiHopSwapWithTokenInfo instead for full token context
+func (f *Formatter) FormatMultiHopSwapWithContext(multiHop MultiHopSwap, subscribedToken string, tickerData TickerData) string {
+	// Legacy version - still works but with limited token detection
+	// Uses the old symbol-matching approach for backward compatibility
+
+	// Determine emoji and type based on multi-hop status
+	emoji := "🔀"
+	typeLabel := "Multi-Hop Swap"
+	if !multiHop.IsMultiHop() {
+		emoji = "🔄"
+		typeLabel = "Swap"
+	}
+
+	// Get swap path and amounts
+	swapPath := multiHop.GetSwapPath()
+	pathString := ""
+	if len(swapPath) > 0 {
+		pathString = swapPath[0]
+		for i := 1; i < len(swapPath); i++ {
+			pathString += " → " + swapPath[i]
+		}
+	}
+
+	inputAmount, outputAmount, inputSymbol, outputSymbol := multiHop.GetTotalAmounts()
+
+	// Build explorer link
+	txHash := multiHop.GetTxHash()
+	platformID := multiHop.GetPlatformID()
+	makerAddress := multiHop.GetMakerAddress()
+
+	var explorerLink string
+	var explorerName string
+	var makerExplorerLink string
+	switch platformID {
+	case 16: // Solana
+		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+		explorerName = "Solscan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://solscan.io/account/%s", makerAddress)
+		}
+	case 1: // Ethereum
+		explorerLink = fmt.Sprintf("https://etherscan.io/tx/%s", txHash)
+		explorerName = "Etherscan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://etherscan.io/address/%s", makerAddress)
+		}
+	case 56: // BSC
+		explorerLink = fmt.Sprintf("https://bscscan.com/tx/%s", txHash)
+		explorerName = "BscScan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://bscscan.com/address/%s", makerAddress)
+		}
+	default:
+		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+		explorerName = "Explorer"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://solscan.io/account/%s", makerAddress)
+		}
+	}
+
+	// Build maker info
+	makerInfo := ""
+	if makerAddress != "" {
+		makerInfo = fmt.Sprintf(`
+*Maker:* [%s](%s)`, truncateAddress(makerAddress), makerExplorerLink)
+	}
+
+	// Build hop info
+	hopInfo := ""
+	if multiHop.IsMultiHop() {
+		hopInfo = fmt.Sprintf("\n*Hops:* %d swaps", multiHop.GetSwapCount())
+	}
+
+	// Build ticker info
+	tickerInfo := ""
+	if tickerData != nil {
+		priceChangeEmoji := "📈"
+		if tickerData.GetPriceChange24h() < 0 {
+			priceChangeEmoji = "📉"
+		}
+
+		tickerInfo = fmt.Sprintf(`
+
+📊 *Token Stats*
+*Price:* $%s
+*24h Change:* %s %.2f%%
+*Market Cap:* $%s
+*Volume 24h:* $%s
+*Liquidity:* $%s`,
+			formatPriceCompact(tickerData.GetPrice()),
+			priceChangeEmoji,
+			tickerData.GetPriceChange24h(),
+			formatLargeNumber(tickerData.GetMarketCap()),
+			formatLargeNumber(tickerData.GetVolume24h()),
+			formatLargeNumber(tickerData.GetLiquidity()),
+		)
+	}
+
+	return fmt.Sprintf(`%s *%s*
+
+*Path:* %s%s
+
+*Flow:*
+• Input: %.6f %s
+• Output: %.6f %s
+• Total Value: $%.2f%s
+
+[View on %s](%s)
+*Time:* %s`,
+		emoji,
+		typeLabel,
+		pathString,
+		hopInfo,
+		inputAmount,
+		inputSymbol,
+		outputAmount,
+		outputSymbol,
+		multiHop.GetTotalValueUSD(),
+		makerInfo,
+		explorerName,
+		explorerLink,
+		time.Now().Format(time.RFC3339),
+	) + tickerInfo
+}
+
+// FormatMultiHopSwapWithTokenInfo formats a multi-hop swap with full token info
+func (f *Formatter) FormatMultiHopSwapWithTokenInfo(multiHop MultiHopSwap, tokenInfo *TokenInfo, tickerData TickerData) string {
+	// Determine emoji and type based on multi-hop status and token role
+	emoji := "🔀"
+	typeLabel := "Multi-Hop Swap"
+
+	if !multiHop.IsMultiHop() {
+		emoji = "🔄"
+		typeLabel = "Swap"
+	} else if tokenInfo != nil {
+		// Customize emoji based on role
+		switch tokenInfo.Role {
+		case "bridge":
+			emoji = "🌉"
+			typeLabel = "Bridge Swap"
+		case "source":
+			emoji = "🔴"
+			typeLabel = "Multi-Hop Sell"
+		case "destination":
+			emoji = "🟢"
+			typeLabel = "Multi-Hop Buy"
+		}
+	}
+
+	// Get swap path and amounts
+	swapPath := multiHop.GetSwapPath()
+	pathString := ""
+	if len(swapPath) > 0 {
+		pathString = swapPath[0]
+		for i := 1; i < len(swapPath); i++ {
+			pathString += " → " + swapPath[i]
+		}
+	}
+
+	inputAmount, outputAmount, inputSymbol, outputSymbol := multiHop.GetTotalAmounts()
+
+	// Build token activity section with detailed info
+	activitySection := ""
+	if tokenInfo != nil && tokenInfo.Symbol != "" {
+		switch tokenInfo.Role {
+		case "source":
+			// Token is being sold
+			activitySection = fmt.Sprintf(`
+
+📍 *Your Token: %s*
+*Role:* Starting Token (Sold)
+*Action:* Sold %s for %s
+*Amount Out:* %.6f %s ($%.2f)`,
+				tokenInfo.Symbol,
+				tokenInfo.Symbol,
+				tokenInfo.ToToken,
+				tokenInfo.AmountOut,
+				tokenInfo.Symbol,
+				tokenInfo.AmountOut*tokenInfo.PriceUSD,
+			)
+
+		case "destination":
+			// Token is being bought
+			activitySection = fmt.Sprintf(`
+
+📍 *Your Token: %s*
+*Role:* End Token (Bought)
+*Action:* Bought %s with %s
+*Amount In:* %.6f %s ($%.2f)`,
+				tokenInfo.Symbol,
+				tokenInfo.Symbol,
+				tokenInfo.FromToken,
+				tokenInfo.AmountIn,
+				tokenInfo.Symbol,
+				tokenInfo.AmountIn*tokenInfo.PriceUSD,
+			)
+
+		case "bridge":
+			// Token is routing/bridge token
+			netFlow := tokenInfo.AmountIn - tokenInfo.AmountOut
+			netFlowPercent := 0.0
+			if tokenInfo.AmountIn > 0 {
+				netFlowPercent = (netFlow / tokenInfo.AmountIn) * 100
+			}
+
+			activitySection = fmt.Sprintf(`
+
+📍 *Your Token: %s*
+*Role:* Bridge/Routing Token
+*Action:* Used to route %s → %s
+
+*Bridge Flow:*
+• Received: %.6f %s ($%.2f)
+• Sent: %.6f %s ($%.2f)
+• Net: %.6f %s (%.2f%%)`,
+				tokenInfo.Symbol,
+				tokenInfo.BridgeFrom,
+				tokenInfo.BridgeTo,
+				tokenInfo.AmountIn,
+				tokenInfo.Symbol,
+				tokenInfo.AmountIn*tokenInfo.PriceUSD,
+				tokenInfo.AmountOut,
+				tokenInfo.Symbol,
+				tokenInfo.AmountOut*tokenInfo.PriceUSD,
+				netFlow,
+				tokenInfo.Symbol,
+				netFlowPercent,
+			)
+		}
+	}
+
+	// Build explorer link
+	txHash := multiHop.GetTxHash()
+	platformID := multiHop.GetPlatformID()
+	makerAddress := multiHop.GetMakerAddress()
+
+	var explorerLink string
+	var explorerName string
+	var makerExplorerLink string
+	switch platformID {
+	case 16: // Solana
+		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+		explorerName = "Solscan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://solscan.io/account/%s", makerAddress)
+		}
+	case 1: // Ethereum
+		explorerLink = fmt.Sprintf("https://etherscan.io/tx/%s", txHash)
+		explorerName = "Etherscan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://etherscan.io/address/%s", makerAddress)
+		}
+	case 56: // BSC
+		explorerLink = fmt.Sprintf("https://bscscan.com/tx/%s", txHash)
+		explorerName = "BscScan"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://bscscan.com/address/%s", makerAddress)
+		}
+	default:
+		explorerLink = fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+		explorerName = "Explorer"
+		if makerAddress != "" {
+			makerExplorerLink = fmt.Sprintf("https://solscan.io/account/%s", makerAddress)
+		}
+	}
+
+	// Build maker info
+	makerInfo := ""
+	if makerAddress != "" {
+		makerInfo = fmt.Sprintf(`
+*Maker:* [%s](%s)`, truncateAddress(makerAddress), makerExplorerLink)
+	}
+
+	// Build hop info
+	hopInfo := ""
+	if multiHop.IsMultiHop() {
+		hopInfo = fmt.Sprintf("\n*Hops:* %d swaps", multiHop.GetSwapCount())
+	}
+
+	// Build ticker info
+	tickerInfo := ""
+	if tickerData != nil && tokenInfo != nil {
+		priceChangeEmoji := "📈"
+		if tickerData.GetPriceChange24h() < 0 {
+			priceChangeEmoji = "📉"
+		}
+
+		tickerInfo = fmt.Sprintf(`
+
+📊 *%s Market Stats*
+*Price:* $%s
+*24h Change:* %s %.2f%%
+*Market Cap:* $%s
+*Volume 24h:* $%s
+*Liquidity:* $%s`,
+			tokenInfo.Symbol,
+			formatPriceCompact(tickerData.GetPrice()),
+			priceChangeEmoji,
+			tickerData.GetPriceChange24h(),
+			formatLargeNumber(tickerData.GetMarketCap()),
+			formatLargeNumber(tickerData.GetVolume24h()),
+			formatLargeNumber(tickerData.GetLiquidity()),
+		)
+	}
+
+	return fmt.Sprintf(`%s *%s*
+
+*Path:* %s%s%s
+
+*Transaction Flow:*
+• Input: %.6f %s
+• Output: %.6f %s
+• Total Value: $%.2f%s
+
+[View on %s](%s)
+*Time:* %s`,
+		emoji,
+		typeLabel,
+		pathString,
+		hopInfo,
+		activitySection,
+		inputAmount,
+		inputSymbol,
+		outputAmount,
+		outputSymbol,
+		multiHop.GetTotalValueUSD(),
+		makerInfo,
+		explorerName,
+		explorerLink,
+		time.Now().Format(time.RFC3339),
+	) + tickerInfo
 }

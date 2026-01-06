@@ -35,9 +35,19 @@ type EventHandler struct {
 	eventQueue chan *models.Event
 	workerDone chan struct{}
 
+	// Transaction grouper for multi-hop swaps
+	txGrouper *TransactionGrouper
+
+	// Multi-hop swap notifications channel
+	multiHopQueue chan *models.MultiHopSwap
+
 	// Configuration
 	rateLimitConfig redis.RateLimitConfig
 	enableDedup     bool
+	enableMultiHop  bool
+
+	// Debug stream types lookup map for fast check
+	debugStreamSet map[string]bool
 }
 
 // EventFilter is a function that determines if an event should be processed
@@ -48,9 +58,12 @@ type Config struct {
 	QueueSize       int
 	WorkerCount     int
 	EnableDedup     bool
+	EnableMultiHop  bool          // Enable multi-hop swap grouping
+	MultiHopWindow  time.Duration // Time window to group swaps (default 500ms)
 	RateLimitKey    string
 	RateLimitMax    int
 	RateLimitWindow time.Duration
+	DebugStreams    []string // Stream types to enable debug logging
 }
 
 // NewEventHandler creates a new event handler
@@ -79,25 +92,45 @@ func NewEventHandler(
 	if cfg.RateLimitWindow == 0 {
 		cfg.RateLimitWindow = time.Minute
 	}
+	if cfg.MultiHopWindow == 0 {
+		cfg.MultiHopWindow = 500 * time.Millisecond
+	}
+
+	// Build debug stream set for fast lookup
+	debugStreamSet := make(map[string]bool, len(cfg.DebugStreams))
+	for _, s := range cfg.DebugStreams {
+		debugStreamSet[s] = true
+	}
 
 	h := &EventHandler{
-		notifier:     notifier,
-		formatter:    telegram.NewFormatter(),
-		deduplicator: deduplicator,
-		rateLimiter:  rateLimiter,
-		pubsub:       pubsub,
-		tickerCache:  tickerCache,
-		settingsSvc:  settingsSvc,
-		log:          log.With(logger.F("component", "handler")),
-		filters:      make([]EventFilter, 0),
-		eventQueue:   make(chan *models.Event, cfg.QueueSize),
-		workerDone:   make(chan struct{}),
-		enableDedup:  cfg.EnableDedup,
+		notifier:       notifier,
+		formatter:      telegram.NewFormatter(),
+		deduplicator:   deduplicator,
+		rateLimiter:    rateLimiter,
+		pubsub:         pubsub,
+		tickerCache:    tickerCache,
+		settingsSvc:    settingsSvc,
+		log:            log.With(logger.F("component", "handler")),
+		filters:        make([]EventFilter, 0),
+		eventQueue:     make(chan *models.Event, cfg.QueueSize),
+		workerDone:     make(chan struct{}),
+		multiHopQueue:  make(chan *models.MultiHopSwap, cfg.QueueSize),
+		enableDedup:    cfg.EnableDedup,
+		enableMultiHop: cfg.EnableMultiHop,
+		debugStreamSet: debugStreamSet,
 		rateLimitConfig: redis.RateLimitConfig{
 			Key:    cfg.RateLimitKey,
 			Limit:  cfg.RateLimitMax,
 			Window: cfg.RateLimitWindow,
 		},
+	}
+
+	// Initialize transaction grouper if multi-hop is enabled
+	if cfg.EnableMultiHop {
+		h.txGrouper = NewTransactionGrouper(log, cfg.MultiHopWindow)
+		h.log.Info("multi-hop swap grouping enabled",
+			logger.F("group_window", cfg.MultiHopWindow.String()),
+		)
 	}
 
 	// Log settings service status
@@ -117,16 +150,43 @@ func NewEventHandler(
 	return h
 }
 
+// isStreamDebugEnabled checks if debug logging is enabled for a specific stream
+func (h *EventHandler) isStreamDebugEnabled(stream string) bool {
+	if len(h.debugStreamSet) == 0 {
+		return false // No debug streams configured, disable all stream debug
+	}
+
+	streamType := extractStreamType(stream)
+	return h.debugStreamSet[streamType]
+}
+
 // Start starts the event processing workers
 func (h *EventHandler) Start(ctx context.Context, workerCount int) {
 	var wg sync.WaitGroup
 
+	// Start event processing workers
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
 			h.worker(ctx, workerID)
 		}(i)
+	}
+
+	// Start multi-hop notification worker if enabled
+	if h.enableMultiHop {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.multiHopWorker(ctx)
+		}()
+
+		// Start cleanup goroutine for stale pending transactions
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.cleanupWorker(ctx)
+		}()
 	}
 
 	go func() {
@@ -138,6 +198,10 @@ func (h *EventHandler) Start(ctx context.Context, workerCount int) {
 // Stop stops the event handler and waits for workers to finish with timeout
 func (h *EventHandler) Stop() {
 	close(h.eventQueue)
+
+	if h.enableMultiHop {
+		close(h.multiHopQueue)
+	}
 
 	// Wait for workers with timeout
 	select {
@@ -171,20 +235,24 @@ func (h *EventHandler) worker(ctx context.Context, id int) {
 func (h *EventHandler) Handle(event *models.Event) {
 	// Apply filters
 	if !h.shouldProcess(event) {
-		h.log.Debug("event filtered out",
-			logger.F("event_type", string(event.Type)),
-			logger.F("stream", event.Stream),
-		)
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("event filtered out",
+				logger.F("event_type", string(event.Type)),
+				logger.F("stream", event.Stream),
+			)
+		}
 		return
 	}
 
 	// Try to queue the event
 	select {
 	case h.eventQueue <- event:
-		h.log.Debug("event queued",
-			logger.F("event_type", string(event.Type)),
-			logger.F("stream", event.Stream),
-		)
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("event queued",
+				logger.F("event_type", string(event.Type)),
+				logger.F("stream", event.Stream),
+			)
+		}
 	default:
 		h.log.Warn("event queue full, dropping event",
 			logger.F("event_type", string(event.Type)),
@@ -215,10 +283,14 @@ func (h *EventHandler) shouldProcess(event *models.Event) bool {
 
 // processEvent processes a single event with deduplication
 func (h *EventHandler) processEvent(ctx context.Context, event *models.Event) {
-	h.log.Info("processing event",
-		logger.F("event_type", string(event.Type)),
-		logger.F("stream", event.Stream),
-	)
+	debugEnabled := h.isStreamDebugEnabled(event.Stream)
+
+	if debugEnabled {
+		h.log.Debug("processing event",
+			logger.F("event_type", string(event.Type)),
+			logger.F("stream", event.Stream),
+		)
+	}
 
 	// Use deduplication if enabled
 	if h.enableDedup && h.deduplicator != nil {
@@ -228,10 +300,12 @@ func (h *EventHandler) processEvent(ctx context.Context, event *models.Event) {
 
 		if err != nil {
 			if errors.Is(err, redis.ErrEventAlreadyProcessed) {
-				h.log.Debug("event already processed by another instance",
-					logger.F("event_type", string(event.Type)),
-					logger.F("stream", event.Stream),
-				)
+				if debugEnabled {
+					h.log.Debug("event already processed by another instance",
+						logger.F("event_type", string(event.Type)),
+						logger.F("stream", event.Stream),
+					)
+				}
 				return
 			}
 			h.log.Error("failed to process event with dedup",
@@ -272,10 +346,12 @@ func (h *EventHandler) doProcessEvent(ctx context.Context, event *models.Event) 
 	case models.EventTypeAlert:
 		message, err = h.handleAlert(event)
 	default:
-		h.log.Debug("unknown event type, skipping",
-			logger.F("event_type", string(event.Type)),
-			logger.F("stream", event.Stream),
-		)
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("unknown event type, skipping",
+				logger.F("event_type", string(event.Type)),
+				logger.F("stream", event.Stream),
+			)
+		}
 		return nil
 	}
 
@@ -293,9 +369,11 @@ func (h *EventHandler) doProcessEvent(ctx context.Context, event *models.Event) 
 
 	// Skip if notifier is nil or disabled (check before rate limiting)
 	if h.notifier == nil || !h.notifier.IsEnabled() {
-		h.log.Debug("telegram notification skipped: notifier not enabled",
-			logger.F("event_type", string(event.Type)),
-		)
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("telegram notification skipped: notifier not enabled",
+				logger.F("event_type", string(event.Type)),
+			)
+		}
 		return nil
 	}
 
@@ -504,6 +582,8 @@ func extractStreamType(stream string) string {
 
 // handleTicker24h processes ticker 24h events from W3W stream
 func (h *EventHandler) handleTicker24h(ctx context.Context, event *models.Event) (string, error) {
+	debugEnabled := h.isStreamDebugEnabled(event.Stream)
+
 	data, err := event.ParseTicker24hData()
 	if err != nil {
 		return "", fmt.Errorf("failed to parse ticker24h data: %w", err)
@@ -542,14 +622,14 @@ func (h *EventHandler) handleTicker24h(ctx context.Context, event *models.Event)
 				logger.F("error", err),
 				logger.F("token", tokenAddress),
 			)
-		} else {
+		} else if debugEnabled {
 			h.log.Debug("ticker data cached successfully",
 				logger.F("token", tokenAddress),
 				logger.F("price", price),
 				logger.F("market_cap", marketCap),
 			)
 		}
-	} else {
+	} else if debugEnabled {
 		h.log.Debug("ticker cache is nil, skipping cache")
 	}
 
@@ -567,7 +647,9 @@ func (h *EventHandler) handleTicker24h(ctx context.Context, event *models.Event)
 func (h *EventHandler) handleKline(event *models.Event) (string, error) {
 	data, err := event.ParseKlineData()
 	if err != nil {
-		h.log.Debug("failed to parse kline data", logger.F("raw_data", string(event.Data)), logger.F("error", err))
+		if h.isStreamDebugEnabled(event.Stream) {
+			h.log.Debug("failed to parse kline data", logger.F("raw_data", string(event.Data)), logger.F("error", err))
+		}
 		return "", fmt.Errorf("failed to parse kline data: %w", err)
 	}
 
@@ -608,53 +690,112 @@ func (h *EventHandler) handleHolders(event *models.Event) (string, error) {
 
 // handleTransaction processes transaction events
 func (h *EventHandler) handleTransaction(ctx context.Context, event *models.Event) (string, error) {
+	debugEnabled := h.isStreamDebugEnabled(event.Stream)
+
 	// Log raw data for debugging
-	h.log.Debug("parsing transaction data",
-		logger.F("raw_data", string(event.Data)),
-		logger.F("stream", event.Stream),
-	)
+	if debugEnabled {
+		h.log.Debug("parsing transaction data",
+			logger.F("raw_data", string(event.Data)),
+			logger.F("stream", event.Stream),
+		)
+	}
 
 	// Try to parse as W3W transaction format first
 	w3wData, err := event.ParseW3WTransactionData()
 	if err == nil && w3wData.D.TxHash != "" {
 		// Successfully parsed as W3W format
-		h.log.Debug("W3W transaction data parsed",
-			logger.F("tx_hash", w3wData.D.TxHash),
-			logger.F("type", w3wData.D.TxType),
-			logger.F("token0", w3wData.D.Token0Symbol),
-			logger.F("token1", w3wData.D.Token1Symbol),
-			logger.F("amount0", w3wData.D.Amount0),
-			logger.F("amount1", w3wData.D.Amount1),
-			logger.F("value_usd", w3wData.D.ValueUSD),
-		)
+		if debugEnabled {
+			h.log.Debug("W3W transaction data parsed",
+				logger.F("tx_hash", w3wData.D.TxHash),
+				logger.F("type", w3wData.D.TxType),
+				logger.F("token0", w3wData.D.Token0Symbol),
+				logger.F("token1", w3wData.D.Token1Symbol),
+				logger.F("amount0", w3wData.D.Amount0),
+				logger.F("amount1", w3wData.D.Amount1),
+				logger.F("value_usd", w3wData.D.ValueUSD),
+				logger.F("quote_index", w3wData.D.QuoteIndex),
+			)
+		}
 
-		// Try to get cached ticker data for token0 (the main token)
+		// Smart multi-hop grouping for token-specific subscriptions
+		// We want to show the FULL context of how our subscribed token is used:
+		// - If ORE is intermediate: "USDC → ORE → SOL" (routing token)
+		// - If ORE is source: "ORE → SOL" (sell)
+		// - If ORE is destination: "USDC → ORE" (buy)
+		//
+		// Enable grouping to detect multi-hop and show full context
+		shouldGroupMultiHop := true
+
+		if h.enableMultiHop && h.txGrouper != nil && shouldGroupMultiHop {
+			multiHop := h.txGrouper.AddSwap(w3wData)
+
+			// If multiHop is returned, it means grouping is complete
+			if multiHop != nil {
+				// Queue for notification
+				select {
+				case h.multiHopQueue <- multiHop:
+					if debugEnabled {
+						h.log.Debug("multi-hop swap queued for notification",
+							logger.F("tx_hash", multiHop.TxHash),
+							logger.F("swap_count", len(multiHop.Swaps)),
+						)
+					}
+				default:
+					h.log.Warn("multi-hop queue full, dropping swap",
+						logger.F("tx_hash", multiHop.TxHash),
+					)
+				}
+			}
+
+			// Return empty string to skip individual swap notification
+			// The grouped notification will be sent by multiHopWorker
+			return "", nil
+		}
+
+		// Multi-hop disabled or not applicable, process as individual swap
+		// Extract subscribed token from stream
+		subscribedToken := extractTokenAddress(event.Stream)
+
+		// Try to get cached ticker data for the subscribed token
 		var tickerData telegram.TickerData
 		if h.tickerCache != nil {
-			h.log.Debug("looking up ticker cache",
-				logger.F("token0_address", w3wData.D.Token0Address),
-			)
-			cachedData, err := h.tickerCache.GetValid(ctx, w3wData.D.Token0Address)
+			// Determine which token to get ticker for
+			tickerTokenAddr := w3wData.D.Token0Address
+			if subscribedToken != "" {
+				// Use subscribed token for ticker lookup
+				tickerTokenAddr = subscribedToken
+			}
+
+			if debugEnabled {
+				h.log.Debug("looking up ticker cache",
+					logger.F("token_address", tickerTokenAddr),
+					logger.F("subscribed_token", subscribedToken),
+				)
+			}
+
+			cachedData, err := h.tickerCache.GetValid(ctx, tickerTokenAddr)
 			if err != nil {
 				h.log.Warn("failed to get cached ticker data",
 					logger.F("error", err),
-					logger.F("token", w3wData.D.Token0Address),
+					logger.F("token", tickerTokenAddr),
 				)
 			} else if cachedData != nil {
 				tickerData = cachedData
-				h.log.Debug("using cached ticker data for transaction",
-					logger.F("token", w3wData.D.Token0Address),
-					logger.F("price", cachedData.Price),
-					logger.F("market_cap", cachedData.MarketCap),
-					logger.F("volume_24h", cachedData.Volume24h),
-					logger.F("age_seconds", cachedData.Age().Seconds()),
-				)
-			} else {
+				if debugEnabled {
+					h.log.Debug("using cached ticker data for transaction",
+						logger.F("token", tickerTokenAddr),
+						logger.F("price", cachedData.Price),
+						logger.F("market_cap", cachedData.MarketCap),
+						logger.F("volume_24h", cachedData.Volume24h),
+						logger.F("age_seconds", cachedData.Age().Seconds()),
+					)
+				}
+			} else if debugEnabled {
 				h.log.Debug("no cached ticker data found",
-					logger.F("token", w3wData.D.Token0Address),
+					logger.F("token", tickerTokenAddr),
 				)
 			}
-		} else {
+		} else if debugEnabled {
 			h.log.Debug("ticker cache is nil, skipping ticker lookup")
 		}
 
@@ -687,14 +828,16 @@ func (h *EventHandler) handleTransaction(ctx context.Context, event *models.Even
 	}
 
 	// Log parsed values for debugging
-	h.log.Debug("legacy transaction data parsed",
-		logger.F("hash", data.Hash),
-		logger.F("from", data.From),
-		logger.F("to", data.To),
-		logger.F("value", data.Value),
-		logger.F("token_symbol", data.TokenSymbol),
-		logger.F("amount", data.Amount),
-	)
+	if debugEnabled {
+		h.log.Debug("legacy transaction data parsed",
+			logger.F("hash", data.Hash),
+			logger.F("from", data.From),
+			logger.F("to", data.To),
+			logger.F("value", data.Value),
+			logger.F("token_symbol", data.TokenSymbol),
+			logger.F("amount", data.Amount),
+		)
+	}
 
 	// Warn if critical fields are empty
 	if data.Hash == "" && data.From == "" && data.To == "" {
@@ -835,5 +978,402 @@ func FilterByMinVolume(minVolume float64) EventFilter {
 
 		volume, _ := strconv.ParseFloat(data.Volume24h, 64)
 		return volume >= minVolume
+	}
+}
+
+// multiHopWorker processes multi-hop swap notifications
+func (h *EventHandler) multiHopWorker(ctx context.Context) {
+	h.log.Debug("multi-hop worker started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			h.log.Debug("multi-hop worker stopped due to context cancellation")
+			return
+		case multiHop, ok := <-h.multiHopQueue:
+			if !ok {
+				h.log.Debug("multi-hop worker stopped, queue closed")
+				return
+			}
+			h.processMultiHopSwap(ctx, multiHop)
+		}
+	}
+}
+
+// cleanupWorker periodically cleans up stale pending transactions
+func (h *EventHandler) cleanupWorker(ctx context.Context) {
+	h.log.Debug("cleanup worker started")
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			h.log.Debug("cleanup worker stopped due to context cancellation")
+			return
+		case <-ticker.C:
+			if h.txGrouper != nil {
+				removed := h.txGrouper.Cleanup(10 * time.Second)
+				if removed > 0 {
+					h.log.Info("cleaned up stale pending transactions",
+						logger.F("removed_count", removed),
+					)
+				}
+			}
+		}
+	}
+}
+
+// processMultiHopSwap processes a completed multi-hop swap
+func (h *EventHandler) processMultiHopSwap(ctx context.Context, multiHop *models.MultiHopSwap) {
+	debugEnabled := h.isStreamDebugEnabled("tx")
+
+	if debugEnabled || multiHop.IsMultiHop() {
+		h.log.Info("processing multi-hop swap",
+			logger.F("tx_hash", multiHop.TxHash),
+			logger.F("is_multi_hop", multiHop.IsMultiHop()),
+			logger.F("swap_count", len(multiHop.Swaps)),
+			logger.F("swap_path", getSwapPathString(multiHop.Swaps)),
+			logger.F("total_value_usd", multiHop.TotalValueUSD),
+		)
+	}
+
+	// Determine subscribed token by checking which token appears in all swaps
+	// For token-specific streams like tx@16_oreoU2P8..., we want to highlight
+	// the role of that token in the multi-hop swap
+
+	// Extract subscribed token address from the stream (if available)
+	// We need to reconstruct the stream to extract token address
+	tokenAddress := multiHop.FirstSwap.D.Token0Address
+	chainID := multiHop.PlatformID
+	stream := fmt.Sprintf("tx@%d_%s", chainID, tokenAddress)
+	subscribedTokenAddr := extractTokenAddress(stream)
+
+	// Detect subscribed token info with role and amounts
+	tokenInfo := h.detectSubscribedTokenInfo(multiHop, subscribedTokenAddr)
+
+	if debugEnabled {
+		h.log.Debug("subscribed token info detected",
+			logger.F("address", tokenInfo.Address),
+			logger.F("symbol", tokenInfo.Symbol),
+			logger.F("role", tokenInfo.Role),
+			logger.F("position", tokenInfo.Position),
+			logger.F("amount_in", tokenInfo.AmountIn),
+			logger.F("amount_out", tokenInfo.AmountOut),
+		)
+	}
+
+	// Get ticker data for the subscribed token
+	var tickerData telegram.TickerData
+	if h.tickerCache != nil && tokenInfo.Address != "" {
+		cachedData, err := h.tickerCache.GetValid(ctx, tokenInfo.Address)
+		if err != nil {
+			h.log.Warn("failed to get cached ticker data for multi-hop",
+				logger.F("error", err),
+				logger.F("token", tokenInfo.Address),
+			)
+		} else if cachedData != nil {
+			tickerData = cachedData
+			if debugEnabled {
+				h.log.Debug("using cached ticker data for multi-hop swap",
+					logger.F("token", tokenInfo.Address),
+					logger.F("symbol", tokenInfo.Symbol),
+					logger.F("price", cachedData.Price),
+				)
+			}
+		}
+	}
+
+	// Format message with subscribed token context
+	var message string
+	if multiHop.IsMultiHop() {
+		// Convert internal TokenInfo to telegram.TokenInfo
+		telegramTokenInfo := &telegram.TokenInfo{
+			Address:    tokenInfo.Address,
+			Symbol:     tokenInfo.Symbol,
+			Role:       tokenInfo.Role,
+			Position:   tokenInfo.Position,
+			AmountIn:   tokenInfo.AmountIn,
+			AmountOut:  tokenInfo.AmountOut,
+			PriceUSD:   tokenInfo.PriceUSD,
+			FromToken:  tokenInfo.FromToken,
+			ToToken:    tokenInfo.ToToken,
+			BridgeFrom: tokenInfo.BridgeFrom,
+			BridgeTo:   tokenInfo.BridgeTo,
+		}
+		message = h.formatter.FormatMultiHopSwapWithTokenInfo(multiHop, telegramTokenInfo, tickerData)
+	} else {
+		// Single swap, use regular format
+		swap := multiHop.FirstSwap
+		message = h.formatter.FormatW3WTransactionWithTicker(
+			swap.D.TxHash,
+			swap.D.TxType,
+			swap.D.Token0Address,
+			swap.D.Token1Address,
+			swap.D.Token0Symbol,
+			swap.D.Token1Symbol,
+			swap.D.Amount0,
+			swap.D.Amount1,
+			swap.D.ValueUSD,
+			swap.D.Token0PriceUSD,
+			swap.D.Token1PriceUSD,
+			swap.D.PlatformID,
+			swap.D.MakerAddress,
+			tickerData,
+		)
+	}
+
+	// Check if notification is enabled (use detected token address)
+	if tokenInfo.Address != "" {
+		tokenAddress = tokenInfo.Address
+	}
+	chainID = multiHop.PlatformID
+	stream = fmt.Sprintf("tx@%d_%s", chainID, tokenAddress)
+
+	if !h.isTokenNotifyEnabled(ctx, stream) {
+		h.log.Warn("SKIPPING multi-hop notification - token notify disabled",
+			logger.F("stream", stream),
+		)
+		return
+	}
+
+	// Skip if notifier is nil or disabled
+	if h.notifier == nil || !h.notifier.IsEnabled() {
+		if debugEnabled {
+			h.log.Debug("telegram notification skipped: notifier not enabled",
+				logger.F("event_type", "multi_hop_swap"),
+			)
+		}
+		return
+	}
+
+	// Check rate limit
+	if h.rateLimiter != nil {
+		allowed, err := h.rateLimiter.Allow(ctx, h.rateLimitConfig)
+		if err != nil {
+			h.log.Error("rate limit check failed",
+				logger.F("error", err),
+			)
+		} else if !allowed {
+			h.log.Warn("rate limit exceeded, skipping multi-hop notification")
+			return
+		}
+	}
+
+	// Send notification
+	if err := h.notifier.SendMarkdown(ctx, message); err != nil {
+		h.log.Error("failed to send multi-hop notification",
+			logger.F("error", err),
+			logger.F("tx_hash", multiHop.TxHash),
+		)
+		return
+	}
+
+	h.log.Info("multi-hop notification sent",
+		logger.F("tx_hash", multiHop.TxHash),
+		logger.F("is_multi_hop", multiHop.IsMultiHop()),
+		logger.F("swap_count", len(multiHop.Swaps)),
+		logger.F("subscribed_token", tokenInfo.Symbol),
+		logger.F("token_role", tokenInfo.Role),
+	)
+}
+
+// SubscribedTokenInfo contains information about the subscribed token in a swap
+type SubscribedTokenInfo struct {
+	Address    string  // Token contract address
+	Symbol     string  // Token symbol (e.g., "ORE")
+	Role       string  // "source", "destination", "bridge"
+	Position   int     // Position in swap path (0-based)
+	AmountIn   float64 // Amount received (for bridge tokens)
+	AmountOut  float64 // Amount sent (for bridge tokens)
+	PriceUSD   float64 // Token price in USD
+	FromToken  string  // Token swapped FROM (for destination role)
+	ToToken    string  // Token swapped TO (for source role)
+	BridgeFrom string  // Starting token (for bridge role)
+	BridgeTo   string  // Ending token (for bridge role)
+}
+
+// detectSubscribedTokenInfo finds and analyzes the subscribed token in the swap
+// Returns detailed information about the token's role and amounts
+func (h *EventHandler) detectSubscribedTokenInfo(multiHop *models.MultiHopSwap, subscribedTokenAddr string) *SubscribedTokenInfo {
+	debugEnabled := h.isStreamDebugEnabled("tx")
+
+	if debugEnabled {
+		h.log.Debug("detecting subscribed token info",
+			logger.F("tx_hash", multiHop.TxHash),
+			logger.F("subscribed_addr", subscribedTokenAddr),
+			logger.F("swap_count", len(multiHop.Swaps)),
+		)
+	}
+
+	// If no subscribed token provided, auto-detect routing token
+	if subscribedTokenAddr == "" {
+		return h.detectRoutingToken(multiHop)
+	}
+
+	// Normalize address for comparison (case-insensitive)
+	subscribedTokenAddr = strings.ToLower(subscribedTokenAddr)
+
+	// Search through all swaps to find the subscribed token
+	for i, swap := range multiHop.Swaps {
+		token0Addr := strings.ToLower(swap.D.Token0Address)
+		token1Addr := strings.ToLower(swap.D.Token1Address)
+
+		// Check if token0 (input) matches subscribed token
+		if token0Addr == subscribedTokenAddr {
+			info := &SubscribedTokenInfo{
+				Address:   swap.D.Token0Address,
+				Symbol:    swap.D.Token0Symbol,
+				Position:  i,
+				AmountOut: swap.D.Amount0,
+				PriceUSD:  swap.D.Token0PriceUSD,
+			}
+
+			// Determine role based on position
+			if i == 0 && len(multiHop.Swaps) == 1 {
+				// Single swap: token0 is being sold
+				info.Role = "source"
+				info.ToToken = swap.D.Token1Symbol
+			} else if i == 0 {
+				// First swap in multi-hop: token0 is starting point
+				info.Role = "source"
+				info.ToToken = multiHop.LastSwap.D.Token1Symbol
+			} else {
+				// Middle or end position: token0 is being used as bridge or destination
+				// If this token appears again as output in next swap, it's a bridge
+				if i < len(multiHop.Swaps)-1 && strings.ToLower(multiHop.Swaps[i+1].D.Token0Address) == subscribedTokenAddr {
+					info.Role = "bridge"
+					info.BridgeFrom = multiHop.FirstSwap.D.Token0Symbol
+					info.BridgeTo = multiHop.LastSwap.D.Token1Symbol
+					// For bridge, also track amount in from previous swap
+					if i > 0 {
+						info.AmountIn = multiHop.Swaps[i-1].D.Amount1
+					}
+				} else {
+					info.Role = "bridge"
+					info.BridgeFrom = multiHop.FirstSwap.D.Token0Symbol
+					info.BridgeTo = swap.D.Token1Symbol
+				}
+			}
+
+			if debugEnabled {
+				h.log.Debug("found subscribed token as input",
+					logger.F("symbol", info.Symbol),
+					logger.F("role", info.Role),
+					logger.F("position", info.Position),
+					logger.F("amount_out", info.AmountOut),
+				)
+			}
+
+			return info
+		}
+
+		// Check if token1 (output) matches subscribed token
+		if token1Addr == subscribedTokenAddr {
+			info := &SubscribedTokenInfo{
+				Address:  swap.D.Token1Address,
+				Symbol:   swap.D.Token1Symbol,
+				Position: i,
+				AmountIn: swap.D.Amount1,
+				PriceUSD: swap.D.Token1PriceUSD,
+			}
+
+			// Determine role based on position and future swaps
+			if i == len(multiHop.Swaps)-1 && len(multiHop.Swaps) == 1 {
+				// Single swap: token1 is being bought
+				info.Role = "destination"
+				info.FromToken = swap.D.Token0Symbol
+			} else if i == len(multiHop.Swaps)-1 {
+				// Last swap in multi-hop: token1 is final destination
+				info.Role = "destination"
+				info.FromToken = multiHop.FirstSwap.D.Token0Symbol
+			} else {
+				// Token1 in middle: likely a bridge token
+				info.Role = "bridge"
+				info.BridgeFrom = multiHop.FirstSwap.D.Token0Symbol
+				info.BridgeTo = multiHop.LastSwap.D.Token1Symbol
+				// For bridge, also track amount out in next swap
+				if i < len(multiHop.Swaps)-1 {
+					info.AmountOut = multiHop.Swaps[i+1].D.Amount0
+				}
+			}
+
+			if debugEnabled {
+				h.log.Debug("found subscribed token as output",
+					logger.F("symbol", info.Symbol),
+					logger.F("role", info.Role),
+					logger.F("position", info.Position),
+					logger.F("amount_in", info.AmountIn),
+				)
+			}
+
+			return info
+		}
+	}
+
+	// Token not found in swaps
+	if debugEnabled {
+		h.log.Warn("subscribed token not found in swaps",
+			logger.F("subscribed_addr", subscribedTokenAddr),
+			logger.F("tx_hash", multiHop.TxHash),
+		)
+	}
+
+	// Fallback: return first token
+	return &SubscribedTokenInfo{
+		Address:  multiHop.FirstSwap.D.Token0Address,
+		Symbol:   multiHop.FirstSwap.D.Token0Symbol,
+		Role:     "unknown",
+		Position: 0,
+		PriceUSD: multiHop.FirstSwap.D.Token0PriceUSD,
+	}
+}
+
+// detectRoutingToken finds the routing/bridge token in a multi-hop swap
+// (token that appears as output of one swap and input of next)
+func (h *EventHandler) detectRoutingToken(multiHop *models.MultiHopSwap) *SubscribedTokenInfo {
+	if !multiHop.IsMultiHop() {
+		// Single swap, return token0 (the base/from token)
+		return &SubscribedTokenInfo{
+			Address:  multiHop.FirstSwap.D.Token0Address,
+			Symbol:   multiHop.FirstSwap.D.Token0Symbol,
+			Role:     "source",
+			Position: 0,
+			ToToken:  multiHop.FirstSwap.D.Token1Symbol,
+			PriceUSD: multiHop.FirstSwap.D.Token0PriceUSD,
+		}
+	}
+
+	// For multi-hop, find the token that appears as output of one swap
+	// and input of the next swap (the bridge/routing token)
+	for i := 0; i < len(multiHop.Swaps)-1; i++ {
+		currentSwap := multiHop.Swaps[i]
+		nextSwap := multiHop.Swaps[i+1]
+
+		// Check if current swap's output (token1) matches next swap's input (token0)
+		if strings.EqualFold(currentSwap.D.Token1Address, nextSwap.D.Token0Address) {
+			return &SubscribedTokenInfo{
+				Address:    currentSwap.D.Token1Address,
+				Symbol:     currentSwap.D.Token1Symbol,
+				Role:       "bridge",
+				Position:   i,
+				AmountIn:   currentSwap.D.Amount1,
+				AmountOut:  nextSwap.D.Amount0,
+				PriceUSD:   currentSwap.D.Token1PriceUSD,
+				BridgeFrom: multiHop.FirstSwap.D.Token0Symbol,
+				BridgeTo:   multiHop.LastSwap.D.Token1Symbol,
+			}
+		}
+	}
+
+	// Fallback: return first swap's token0
+	return &SubscribedTokenInfo{
+		Address:  multiHop.FirstSwap.D.Token0Address,
+		Symbol:   multiHop.FirstSwap.D.Token0Symbol,
+		Role:     "source",
+		Position: 0,
+		ToToken:  multiHop.LastSwap.D.Token1Symbol,
+		PriceUSD: multiHop.FirstSwap.D.Token0PriceUSD,
 	}
 }

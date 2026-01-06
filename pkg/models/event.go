@@ -38,8 +38,24 @@ type W3WStreamMessage struct {
 
 // SubscribeResponse represents the subscription response
 type SubscribeResponse struct {
-	ID     string      `json:"id"`
+	ID     interface{} `json:"id"` // Can be string or number
 	Result interface{} `json:"result"`
+}
+
+// GetIDString returns ID as string
+func (s *SubscribeResponse) GetIDString() string {
+	switch v := s.ID.(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.FormatFloat(v, 'f', 0, 64)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case int:
+		return strconv.Itoa(v)
+	default:
+		return ""
+	}
 }
 
 // Ticker24hData represents W3W ticker 24h data
@@ -202,6 +218,82 @@ type W3WTransactionData struct {
 	Token1PoolType    int     `json:"t1pt"`  // Token 1 pool type
 	InnerIndex        string  `json:"iix"`   // Inner index
 	TradeID           string  `json:"tid"`   // Trade ID
+}
+
+// MultiHopSwap represents multiple swaps in a single transaction
+type MultiHopSwap struct {
+	TxHash        string
+	Swaps         []*W3WTransactionMessage
+	FirstSwap     *W3WTransactionMessage
+	LastSwap      *W3WTransactionMessage
+	TotalValueUSD float64
+	PlatformID    int
+	MakerAddress  string
+	Timestamp     string
+}
+
+// GetSwapPath returns the token swap path (e.g., ["USDC", "ORE", "SOL"])
+func (m *MultiHopSwap) GetSwapPath() []string {
+	if len(m.Swaps) == 0 {
+		return nil
+	}
+
+	// Build path by following token connections
+	path := []string{m.FirstSwap.D.Token0Symbol}
+
+	for _, swap := range m.Swaps {
+		// Add the output token of each swap
+		path = append(path, swap.D.Token1Symbol)
+	}
+
+	return path
+}
+
+// GetTotalAmounts returns the initial input and final output amounts
+func (m *MultiHopSwap) GetTotalAmounts() (inputAmount, outputAmount float64, inputSymbol, outputSymbol string) {
+	if len(m.Swaps) == 0 {
+		return 0, 0, "", ""
+	}
+
+	// Input is from the first swap
+	inputAmount = m.FirstSwap.D.Amount0
+	inputSymbol = m.FirstSwap.D.Token0Symbol
+
+	// Output is from the last swap
+	outputAmount = m.LastSwap.D.Amount1
+	outputSymbol = m.LastSwap.D.Token1Symbol
+
+	return
+}
+
+// IsMultiHop returns true if this is a multi-hop swap (more than 1 swap)
+func (m *MultiHopSwap) IsMultiHop() bool {
+	return len(m.Swaps) > 1
+}
+
+// GetTxHash returns the transaction hash
+func (m *MultiHopSwap) GetTxHash() string {
+	return m.TxHash
+}
+
+// GetTotalValueUSD returns the total value in USD
+func (m *MultiHopSwap) GetTotalValueUSD() float64 {
+	return m.TotalValueUSD
+}
+
+// GetPlatformID returns the platform ID
+func (m *MultiHopSwap) GetPlatformID() int {
+	return m.PlatformID
+}
+
+// GetMakerAddress returns the maker address
+func (m *MultiHopSwap) GetMakerAddress() string {
+	return m.MakerAddress
+}
+
+// GetSwapCount returns the number of swaps
+func (m *MultiHopSwap) GetSwapCount() int {
+	return len(m.Swaps)
 }
 
 // BlockData represents block event data

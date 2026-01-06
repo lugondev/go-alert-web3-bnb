@@ -111,10 +111,21 @@ type RedisConfig struct {
 
 // LoggerConfig holds logging configuration
 type LoggerConfig struct {
-	Level      string `yaml:"level"`
-	Format     string `yaml:"format"` // json or text
-	Output     string `yaml:"output"` // stdout, stderr, or file path
-	TimeFormat string `yaml:"time_format"`
+	Level        string   `yaml:"level"`
+	Format       string   `yaml:"format"` // json or text
+	Output       string   `yaml:"output"` // stdout, stderr, or file path
+	TimeFormat   string   `yaml:"time_format"`
+	DebugStreams []string `yaml:"debug_streams"` // Enable debug logging for specific stream types
+}
+
+// IsStreamDebugEnabled checks if debug logging is enabled for a specific stream type
+func (l *LoggerConfig) IsStreamDebugEnabled(streamType string) bool {
+	for _, s := range l.DebugStreams {
+		if s == streamType {
+			return true
+		}
+	}
+	return false
 }
 
 // Load loads configuration from file and environment variables
@@ -339,6 +350,18 @@ func loadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("LOG_OUTPUT"); v != "" {
 		cfg.Logger.Output = v
+	}
+	// LOG_DEBUG_STREAMS: comma-separated stream types to enable debug logging
+	// Example: LOG_DEBUG_STREAMS=tx,ticker24h,holders
+	if v := os.Getenv("LOG_DEBUG_STREAMS"); v != "" {
+		streams := strings.Split(v, ",")
+		cfg.Logger.DebugStreams = make([]string, 0, len(streams))
+		for _, s := range streams {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				cfg.Logger.DebugStreams = append(cfg.Logger.DebugStreams, s)
+			}
+		}
 	}
 
 	// Tokens from environment (semicolon-separated tokens)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type Config struct {
 	PongTimeout       time.Duration
 	WriteTimeout      time.Duration
 	ReadTimeout       time.Duration
+	DebugStreams      []string // Stream types to enable debug logging (e.g., ["tx", "ticker24h"])
 }
 
 // EventHandler is a function that handles incoming events
@@ -51,15 +53,66 @@ type Client struct {
 	// Track subscribed channels for unsubscribe on close
 	subscribedChannels []string
 	channelsMu         sync.RWMutex
+
+	// Debug stream types lookup map for fast check
+	debugStreamSet map[string]bool
 }
 
 // NewClient creates a new WebSocket client
 func NewClient(cfg Config, log logger.Logger) *Client {
-	return &Client{
-		config: cfg,
-		log:    log.With(logger.F("component", "websocket")),
-		done:   make(chan struct{}),
+	// Build debug stream set for fast lookup
+	debugStreamSet := make(map[string]bool, len(cfg.DebugStreams))
+	for _, s := range cfg.DebugStreams {
+		debugStreamSet[s] = true
 	}
+
+	return &Client{
+		config:         cfg,
+		log:            log.With(logger.F("component", "websocket")),
+		done:           make(chan struct{}),
+		debugStreamSet: debugStreamSet,
+	}
+}
+
+// isStreamDebugEnabled checks if debug logging is enabled for a specific stream
+func (c *Client) isStreamDebugEnabled(stream string) bool {
+	if len(c.debugStreamSet) == 0 {
+		return false // No debug streams configured, disable all stream debug
+	}
+
+	// Extract stream type from stream name
+	streamType := extractStreamTypeFromStream(stream)
+	return c.debugStreamSet[streamType]
+}
+
+// extractStreamTypeFromStream extracts the stream type from a stream name
+// Supports formats:
+// - w3w@<token_address>@<chain_type>@<stream_type> -> stream_type
+// - kl@<chain_id>@<token_address>@<interval> -> kline
+// - tx@<chain_id>_<token_address> -> tx
+func extractStreamTypeFromStream(stream string) string {
+	if stream == "" {
+		return ""
+	}
+
+	parts := strings.Split(stream, "@")
+	if len(parts) < 1 {
+		return ""
+	}
+
+	prefix := parts[0]
+	switch prefix {
+	case "w3w":
+		if len(parts) >= 4 {
+			return parts[3] // e.g., "ticker24h", "holders"
+		}
+	case "kl":
+		return "kline"
+	case "tx":
+		return "tx"
+	}
+
+	return ""
 }
 
 // SetHandler sets the event handler
@@ -198,11 +251,6 @@ func (c *Client) readMessage(ctx context.Context) error {
 		return err
 	}
 
-	c.log.Debug("raw message received",
-		logger.F("size", len(message)),
-		logger.F("raw", string(message)),
-	)
-
 	// Try to parse as W3W stream message first
 	var streamMsg models.W3WStreamMessage
 	if err := json.Unmarshal(message, &streamMsg); err == nil && streamMsg.Stream != "" {
@@ -214,10 +262,17 @@ func (c *Client) readMessage(ctx context.Context) error {
 			Timestamp: time.Now(),
 		}
 
-		c.log.Debug("parsed W3W stream message",
-			logger.F("stream", streamMsg.Stream),
-			logger.F("type", string(event.Type)),
-		)
+		// Only log debug if this stream type is enabled for debug
+		if c.isStreamDebugEnabled(streamMsg.Stream) {
+			c.log.Debug("raw message received",
+				logger.F("size", len(message)),
+				logger.F("raw", string(message)),
+			)
+			c.log.Debug("parsed W3W stream message",
+				logger.F("stream", streamMsg.Stream),
+				logger.F("type", string(event.Type)),
+			)
+		}
 
 		if c.handler != nil {
 			c.handler(event)
@@ -227,17 +282,19 @@ func (c *Client) readMessage(ctx context.Context) error {
 
 	// Try to parse as subscribe response
 	var subResp models.SubscribeResponse
-	if err := json.Unmarshal(message, &subResp); err == nil && subResp.ID != "" {
+	if err := json.Unmarshal(message, &subResp); err == nil && subResp.ID != nil {
 		// Check if this is a ping response (GET_PROPERTY response)
 		if subResp.Result != nil {
-			c.log.Debug("pong received", logger.F("id", subResp.ID))
+			if c.isStreamDebugEnabled("") { // Ping/pong is not stream-specific
+				c.log.Debug("pong received", logger.F("id", subResp.GetIDString()))
+			}
 			// Extend read deadline on successful pong
 			if err := conn.SetReadDeadline(time.Now().Add(c.config.PongTimeout)); err != nil {
 				c.log.Warn("failed to extend read deadline", logger.F("error", err))
 			}
 		} else {
 			c.log.Info("subscription response received",
-				logger.F("id", subResp.ID),
+				logger.F("id", subResp.GetIDString()),
 				logger.F("result", subResp.Result),
 			)
 		}

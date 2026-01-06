@@ -40,6 +40,10 @@ logger:
     format: text
     output: stdout
     time_format: '2006-01-02T15:04:05Z07:00'
+    # Enable debug logging for specific stream types (global setting)
+    # Available: ticker24h, holders, tx, kline
+    debug_streams:
+        - tx
 
 # Token subscriptions
 # Supported chain_type: CT_501 (Solana), 56 (BSC), 8453 (Base)
@@ -50,6 +54,7 @@ tokens:
       chain_type: CT_501
       streams:
           - ticker24h
+          - tx
     # - address: pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn
     #   chain_type: CT_501
     #   streams:
