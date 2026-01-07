@@ -234,6 +234,7 @@ func (h *SettingsHandler) SaveTelegram(c *fiber.Ctx) error {
 
 	var form settings.TelegramFormData
 	if err := c.BodyParser(&form); err != nil {
+		h.log.Error("failed to parse telegram form data", logger.F("error", err))
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid form data",
 		})
@@ -241,10 +242,17 @@ func (h *SettingsHandler) SaveTelegram(c *fiber.Ctx) error {
 
 	telegram := form.ToTelegramSettings()
 	if err := h.service.SaveTelegram(ctx, telegram); err != nil {
+		h.log.Error("failed to save telegram settings", logger.F("error", err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
+
+	h.log.Info("telegram settings saved successfully",
+		logger.F("bot_token_set", telegram.BotToken != ""),
+		logger.F("chat_id", telegram.ChatID),
+		logger.F("enabled", telegram.Enabled),
+	)
 
 	// Check if this is an HTMX request
 	if c.Get("HX-Request") == "true" {

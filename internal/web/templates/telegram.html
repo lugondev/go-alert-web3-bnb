@@ -179,13 +179,17 @@ document.getElementById('telegram-form').addEventListener('submit', function(e) 
     .then(res => res.json())
     .then(result => {
         if (result.error) {
-            showAlert('error', '[ERROR] ' + result.error);
+            showAlert(result.error, 'error');
         } else {
-            showAlert('success', '[SUCCESS] Settings saved successfully');
+            showAlert('Telegram settings saved successfully', 'success');
+            // Reload page after successful save to show updated values
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
         }
     })
     .catch(err => {
-        showAlert('error', '[ERROR] Failed to save settings');
+        showAlert('Failed to save settings', 'error');
     });
 });
 
@@ -198,11 +202,11 @@ function testTelegram() {
     };
     
     if (!data.bot_token) {
-        showAlert('error', '[ERROR] Please enter a bot token');
+        showAlert('Please enter a bot token', 'error');
         return;
     }
     if (!data.chat_id) {
-        showAlert('error', '[ERROR] Please enter a chat ID');
+        showAlert('Please enter a chat ID', 'error');
         return;
     }
     
@@ -221,13 +225,13 @@ function testTelegram() {
         .then(res => res.json())
         .then(result => {
             if (result.error) {
-                showAlert('error', '[ERROR] ' + result.error);
+                showAlert(result.error, 'error');
             } else {
-                showAlert('success', '[SUCCESS] Test message sent! Check your Telegram.');
+                showAlert('Test message sent! Check your Telegram.', 'success');
             }
         })
         .catch(err => {
-            showAlert('error', '[ERROR] Failed to send test message');
+            showAlert('Failed to send test message', 'error');
         })
         .finally(() => {
             btn.textContent = originalText;
@@ -235,7 +239,7 @@ function testTelegram() {
         });
 }
 
-function showAlert(type, message) {
+function showAlert(message, type) {
     const alertDiv = document.getElementById('form-alert');
     const bgClass = type === 'error' ? 'bg-cyber-red/20 text-cyber-red border-cyber-red' : 'bg-cyber-green/20 text-cyber-green border-cyber-green';
     alertDiv.innerHTML = `

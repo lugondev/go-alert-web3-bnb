@@ -181,15 +181,17 @@ fetch('/api/subscriptions')
     });
 
 function deleteToken(id) {
-    if (!confirm('[CONFIRM] Delete this token?')) return;
-    
-    fetch('/api/tokens/' + id, { method: 'DELETE' })
-        .then(res => {
-            if (res.ok) {
-                location.reload();
-            } else {
-                alert('[ERROR] Failed to delete token');
-            }
-        });
+    confirmAction('[CONFIRM] Delete this token?').then(confirmed => {
+        if (!confirmed) return;
+        
+        fetch('/api/tokens/' + id, { method: 'DELETE' })
+            .then(res => {
+                if (res.ok) {
+                    location.reload();
+                } else {
+                    showAlert('Failed to delete token', 'error');
+                }
+            });
+    });
 }
 </script>

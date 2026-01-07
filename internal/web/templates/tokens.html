@@ -233,24 +233,26 @@ let currentStreamType = null;
 let botCounter = 0;
 
 function deleteToken(id) {
-    if (!confirm('[CONFIRM] Delete this token? This action cannot be undone.')) return;
-    
-    fetch('/api/tokens/' + id, { method: 'DELETE' })
-        .then(res => {
-            if (res.ok) {
-                const row = document.getElementById('token-row-' + id);
-                if (row) {
-                    row.style.opacity = '0';
-                    row.style.transform = 'translateX(-20px)';
-                    setTimeout(() => row.remove(), 300);
+    confirmAction('[CONFIRM] Delete this token? This action cannot be undone.').then(confirmed => {
+        if (!confirmed) return;
+        
+        fetch('/api/tokens/' + id, { method: 'DELETE' })
+            .then(res => {
+                if (res.ok) {
+                    const row = document.getElementById('token-row-' + id);
+                    if (row) {
+                        row.style.opacity = '0';
+                        row.style.transform = 'translateX(-20px)';
+                        setTimeout(() => row.remove(), 300);
+                    }
+                } else {
+                    showAlert('Failed to delete token', 'error');
                 }
-            } else {
-                alert('[ERROR] Failed to delete token');
-            }
-        })
-        .catch(() => {
-            alert('[ERROR] Network error occurred');
-        });
+            })
+            .catch(() => {
+                showAlert('Network error occurred', 'error');
+            });
+    });
 }
 
 function toggleNotify(id, enabled) {
@@ -263,11 +265,11 @@ function toggleNotify(id, enabled) {
         if (res.ok) {
             location.reload();
         } else {
-            alert('[ERROR] Failed to update notification setting');
+            showAlert('Failed to update notification setting', 'error');
         }
     })
     .catch(() => {
-        alert('[ERROR] Network error occurred');
+        showAlert('Network error occurred', 'error');
     });
 }
 
@@ -318,7 +320,7 @@ async function openStreamConfig(tokenId, streamType, streamLabel) {
         
         document.getElementById('stream-config-modal').classList.remove('hidden');
     } catch (error) {
-        alert('[ERROR] Failed to load stream configuration: ' + error.message);
+        showAlert('Failed to load stream configuration: ' + error.message, 'error');
     }
 }
 
@@ -399,28 +401,24 @@ document.getElementById('stream-config-form').addEventListener('submit', async (
         enabled: entry.querySelector('.bot-enabled').checked
     })).filter(bot => bot.bot_token && bot.chat_id);
     
-    // Validate rate limit window format
     const rateLimitWindow = document.getElementById('config-rate-window').value.trim();
     if (rateLimitWindow && rateLimitWindow !== '0s') {
-        // Valid formats: 1m, 5m, 1h, 30s, etc.
         const durationRegex = /^\d+[smh]$/;
         if (!durationRegex.test(rateLimitWindow)) {
-            alert('[ERROR] Invalid rate limit window format. Use formats like: 1m, 5m, 1h, 30s');
+            await showAlert('Invalid rate limit window format. Use formats like: 1m, 5m, 1h, 30s', 'error');
             return;
         }
     }
     
-    // Validate TX min value
     const txMinValue = parseFloat(document.getElementById('config-tx-min-value').value);
     if (isNaN(txMinValue) || txMinValue < 0) {
-        alert('[ERROR] TX Min Value must be a non-negative number');
+        await showAlert('TX Min Value must be a non-negative number', 'error');
         return;
     }
     
-    // Validate rate limit
     const rateLimit = parseInt(document.getElementById('config-rate-limit').value);
     if (isNaN(rateLimit) || rateLimit < 0) {
-        alert('[ERROR] Rate Limit must be a non-negative number');
+        await showAlert('Rate Limit must be a non-negative number', 'error');
         return;
     }
     
@@ -448,11 +446,11 @@ document.getElementById('stream-config-form').addEventListener('submit', async (
             location.reload();
         } else {
             const error = await response.json();
-            alert('[ERROR] ' + (error.error || 'Failed to save configuration'));
+            await showAlert(error.error || 'Failed to save configuration', 'error');
         }
     } catch (error) {
         console.error('[Stream Config] Save error:', error);
-        alert('[ERROR] Network error: ' + error.message);
+        await showAlert('Network error: ' + error.message, 'error');
     }
 });
 

@@ -223,10 +223,10 @@ func (f *TokenFormData) ToTokenSettings() TokenSettings {
 
 // TelegramFormData represents form data for Telegram settings
 type TelegramFormData struct {
-	BotToken  string `form:"bot_token"`
-	ChatID    string `form:"chat_id"`
-	RateLimit int    `form:"rate_limit"`
-	Enabled   bool   `form:"enabled"`
+	BotToken  string `json:"bot_token" form:"bot_token"`
+	ChatID    string `json:"chat_id" form:"chat_id"`
+	RateLimit int    `json:"rate_limit" form:"rate_limit"`
+	Enabled   bool   `json:"enabled" form:"enabled"`
 }
 
 // ToTelegramSettings converts form data to TelegramSettings

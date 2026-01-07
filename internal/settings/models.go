@@ -119,6 +119,10 @@ func (s *StreamNotifyConfig) ShouldNotifyTx(txType string, valueUSD float64) boo
 	}
 
 	if s.TxFilterType != "" && s.TxFilterType != TxFilterBoth {
+		if txType == "" {
+			return true
+		}
+
 		if s.TxFilterType == TxFilterBuy && txType != "buy" {
 			return false
 		}

@@ -39,8 +39,161 @@ function showNotification(type, message) {
     }, 5000);
 }
 
+// Custom Confirm Modal
 function confirmAction(message) {
-    return confirm(message);
+    return new Promise((resolve) => {
+        const modalId = 'confirm-modal-' + Date.now();
+        const modal = document.createElement('div');
+        modal.id = modalId;
+        modal.className = 'fixed inset-0 bg-black/90 backdrop-blur-sm z-[9999] flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-cyber-dark border-2 border-cyber-amber max-w-md w-full animate-slide-down shadow-2xl shadow-cyber-amber/20">
+                <div class="border-b-2 border-cyber-amber bg-cyber-darker px-6 py-4">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-6 h-6 text-cyber-amber" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                        </svg>
+                        <h3 class="text-lg font-bold text-cyber-amber uppercase tracking-wide">[CONFIRM_ACTION]</h3>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <p class="text-white font-mono text-sm leading-relaxed">${message}</p>
+                </div>
+                <div class="flex items-center justify-end space-x-4 px-6 pb-6">
+                    <button data-action="cancel" 
+                        class="px-6 py-3 bg-cyber-gray-800 text-white font-bold text-xs uppercase tracking-wider hover:bg-cyber-gray-700 transition-all border-2 border-cyber-gray-600">
+                        Cancel
+                    </button>
+                    <button data-action="confirm" 
+                        class="px-6 py-3 bg-cyber-amber text-cyber-black font-bold text-xs uppercase tracking-wider hover:bg-cyber-red hover:shadow-lg hover:shadow-cyber-red/50 transition-all border-2 border-cyber-amber">
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const cleanup = () => {
+            modal.classList.add('opacity-0');
+            modal.classList.add('transition-opacity');
+            setTimeout(() => modal.remove(), 200);
+        };
+        
+        modal.querySelector('[data-action="confirm"]').addEventListener('click', () => {
+            cleanup();
+            resolve(true);
+        });
+        
+        modal.querySelector('[data-action="cancel"]').addEventListener('click', () => {
+            cleanup();
+            resolve(false);
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                cleanup();
+                resolve(false);
+            }
+        });
+        
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') {
+                cleanup();
+                resolve(false);
+                document.removeEventListener('keydown', escHandler);
+            }
+        });
+        
+        setTimeout(() => modal.querySelector('[data-action="confirm"]').focus(), 100);
+    });
+}
+
+// Custom Alert Modal
+function showAlert(message, type = 'error') {
+    return new Promise((resolve) => {
+        const modalId = 'alert-modal-' + Date.now();
+        const modal = document.createElement('div');
+        modal.id = modalId;
+        modal.className = 'fixed inset-0 bg-black/90 backdrop-blur-sm z-[9999] flex items-center justify-center p-4';
+        
+        const typeConfig = {
+            error: {
+                color: 'cyber-red',
+                icon: '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>',
+                title: '[ERROR]'
+            },
+            success: {
+                color: 'cyber-green',
+                icon: '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>',
+                title: '[SUCCESS]'
+            },
+            warning: {
+                color: 'cyber-amber',
+                icon: '<path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>',
+                title: '[WARNING]'
+            },
+            info: {
+                color: 'cyber-cyan',
+                icon: '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>',
+                title: '[INFO]'
+            }
+        };
+        
+        const config = typeConfig[type] || typeConfig.error;
+        
+        modal.innerHTML = `
+            <div class="bg-cyber-dark border-2 border-${config.color} max-w-md w-full animate-slide-down shadow-2xl shadow-${config.color}/20">
+                <div class="border-b-2 border-${config.color} bg-cyber-darker px-6 py-4">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-6 h-6 text-${config.color}" fill="currentColor" viewBox="0 0 20 20">
+                            ${config.icon}
+                        </svg>
+                        <h3 class="text-lg font-bold text-${config.color} uppercase tracking-wide">${config.title}</h3>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <p class="text-white font-mono text-sm leading-relaxed">${message}</p>
+                </div>
+                <div class="flex items-center justify-end px-6 pb-6">
+                    <button data-action="close" 
+                        class="px-6 py-3 bg-${config.color} text-cyber-black font-bold text-xs uppercase tracking-wider hover:shadow-lg hover:shadow-${config.color}/50 transition-all border-2 border-${config.color}">
+                        OK
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const cleanup = () => {
+            modal.classList.add('opacity-0');
+            modal.classList.add('transition-opacity');
+            setTimeout(() => modal.remove(), 200);
+        };
+        
+        modal.querySelector('[data-action="close"]').addEventListener('click', () => {
+            cleanup();
+            resolve();
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                cleanup();
+                resolve();
+            }
+        });
+        
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape' || e.key === 'Enter') {
+                cleanup();
+                resolve();
+                document.removeEventListener('keydown', escHandler);
+            }
+        });
+        
+        setTimeout(() => modal.querySelector('[data-action="close"]').focus(), 100);
+    });
 }
 
 function copyToClipboard(text) {
@@ -84,7 +237,8 @@ async function apiCall(url, method = 'GET', data = null) {
 }
 
 async function deleteToken(id) {
-    if (!confirmAction('[CONFIRM] Delete this token? This action cannot be undone.')) {
+    const confirmed = await confirmAction('[CONFIRM] Delete this token? This action cannot be undone.');
+    if (!confirmed) {
         return;
     }
 

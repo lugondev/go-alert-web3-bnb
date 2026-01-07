@@ -18,6 +18,9 @@ type TransactionGrouper struct {
 	// Configuration
 	groupWindow time.Duration // Time window to wait for related swaps
 	maxSwaps    int           // Maximum swaps to group in one transaction
+
+	// Callback for finalized transactions
+	onFinalize func(*models.MultiHopSwap)
 }
 
 type pendingTransaction struct {
@@ -29,7 +32,7 @@ type pendingTransaction struct {
 }
 
 // NewTransactionGrouper creates a new transaction grouper
-func NewTransactionGrouper(log logger.Logger, groupWindow time.Duration) *TransactionGrouper {
+func NewTransactionGrouper(log logger.Logger, groupWindow time.Duration, onFinalize func(*models.MultiHopSwap)) *TransactionGrouper {
 	if groupWindow == 0 {
 		groupWindow = 500 * time.Millisecond // Default 500ms window
 	}
@@ -39,6 +42,7 @@ func NewTransactionGrouper(log logger.Logger, groupWindow time.Duration) *Transa
 		log:          log.With(logger.F("component", "tx_grouper")),
 		groupWindow:  groupWindow,
 		maxSwaps:     10, // Reasonable limit for multi-hop swaps
+		onFinalize:   onFinalize,
 	}
 }
 
@@ -121,6 +125,10 @@ func (g *TransactionGrouper) finalizeTransaction(txHash string) {
 			logger.F("swap_path", getSwapPathString(multiHop.Swaps)),
 			logger.F("total_value_usd", multiHop.TotalValueUSD),
 		)
+
+		if g.onFinalize != nil {
+			g.onFinalize(multiHop)
+		}
 	}
 }
 

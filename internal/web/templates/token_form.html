@@ -113,9 +113,8 @@
                                 </label>
 
                                 <div 
-                                    class="stream-notify-toggle flex items-center space-x-3 flex-shrink-0" 
+                                    class="stream-notify-toggle flex items-center space-x-3 flex-shrink-0{{if not (index $.StreamMap .Value)}} hidden{{end}}" 
                                     id="notify-toggle-{{.Value}}"
-                                    style="{{if not (index $.StreamMap .Value)}}display: none;{{end}}"
                                 >
                                     <button 
                                         type="button"
@@ -297,7 +296,7 @@ let botCounter = 0;
 
 function openStreamConfigInEdit(tokenId, streamType, streamLabel) {
     // Use token ID from form if editing, or use 'new' for new tokens
-    const isNew = {{.IsNew}};
+    const isNew = '{{.IsNew}}' == 'true';
     currentTokenId = isNew ? null : (tokenId || '{{.Token.ID}}');
     currentStreamType = streamType;
     
@@ -361,7 +360,7 @@ async function loadStreamConfig(tokenId, streamType) {
         }
     } catch (error) {
         console.error('[Stream Config] Failed to load:', error);
-        alert('[ERROR] Failed to load stream configuration: ' + error.message);
+        showModalAlert('error', 'Failed to load stream configuration: ' + error.message);
     }
 }
 
@@ -438,7 +437,7 @@ document.getElementById('stream-config-form').addEventListener('submit', async f
     e.preventDefault();
     
     if (!currentTokenId) {
-        alert('[ERROR] Please save the token first before configuring streams');
+        showModalAlert('warning', 'Please save the token first before configuring streams');
         return;
     }
     
@@ -455,22 +454,20 @@ document.getElementById('stream-config-form').addEventListener('submit', async f
     if (rateLimitWindow && rateLimitWindow !== '0s') {
         const durationRegex = /^\d+[smh]$/;
         if (!durationRegex.test(rateLimitWindow)) {
-            alert('[ERROR] Invalid rate limit window format. Use formats like: 1m, 5m, 1h, 30s');
+            showModalAlert('error', 'Invalid rate limit window format. Use formats like: 1m, 5m, 1h, 30s');
             return;
         }
     }
     
-    // Validate TX min value
     const txMinValue = parseFloat(document.getElementById('config-tx-min-value').value);
     if (isNaN(txMinValue) || txMinValue < 0) {
-        alert('[ERROR] TX Min Value must be a non-negative number');
+        showModalAlert('error', 'TX Min Value must be a non-negative number');
         return;
     }
     
-    // Validate rate limit
     const rateLimit = parseInt(document.getElementById('config-rate-limit').value);
     if (isNaN(rateLimit) || rateLimit < 0) {
-        alert('[ERROR] Rate Limit must be a non-negative number');
+        showModalAlert('error', 'Rate Limit must be a non-negative number');
         return;
     }
     
@@ -495,14 +492,18 @@ document.getElementById('stream-config-form').addEventListener('submit', async f
         if (response.ok) {
             console.log('[Stream Config] Configuration saved successfully');
             closeStreamConfigModal();
-            alert('[SUCCESS] Stream configuration saved');
+            if (typeof showAlert === 'function' && showAlert.constructor.name === 'AsyncFunction') {
+                await showAlert('Stream configuration saved', 'success');
+            } else {
+                showModalAlert('success', 'Stream configuration saved');
+            }
         } else {
             const error = await response.json();
-            alert('[ERROR] ' + (error.error || 'Failed to save configuration'));
+            showModalAlert('error', error.error || 'Failed to save configuration');
         }
     } catch (error) {
         console.error('[Stream Config] Save error:', error);
-        alert('[ERROR] Network error: ' + error.message);
+        showModalAlert('error', 'Network error: ' + error.message);
     }
 });
 
@@ -517,7 +518,11 @@ document.getElementById('stream-config-modal').addEventListener('click', (e) => 
 function toggleStreamNotifyVisibility(streamValue, isChecked) {
     const notifyToggle = document.getElementById('notify-toggle-' + streamValue);
     if (notifyToggle) {
-        notifyToggle.style.display = isChecked ? 'flex' : 'none';
+        if (isChecked) {
+            notifyToggle.classList.remove('hidden');
+        } else {
+            notifyToggle.classList.add('hidden');
+        }
     }
 }
 
@@ -567,7 +572,7 @@ document.getElementById('token-form').addEventListener('submit', function(e) {
     
     const form = e.target;
     const formData = new FormData(form);
-    const isNew = {{.IsNew}};
+    const isNew = '{{.IsNew}}' == 'true';
     
     const streams = [];
     form.querySelectorAll('input[name="streams"]:checked').forEach(cb => {
@@ -606,22 +611,52 @@ document.getElementById('token-form').addEventListener('submit', function(e) {
             window.location.href = '/tokens';
         } else {
             return res.json().then(data => {
-                showAlert('error', '[ERROR] ' + (data.error || 'Failed to save token'));
+                showFormAlert('error', (data.error || 'Failed to save token'));
             });
         }
     })
     .catch(err => {
-        showAlert('error', '[ERROR] Network error occurred');
+        showFormAlert('error', 'Network error occurred');
     });
 });
 
-function showAlert(type, message) {
+function showFormAlert(type, message) {
     const alertDiv = document.getElementById('form-alert');
     const bgClass = type === 'error' ? 'bg-cyber-red/20 text-cyber-red border-cyber-red' : 'bg-cyber-green/20 text-cyber-green border-cyber-green';
     alertDiv.innerHTML = `
         <div class="mb-6 p-4 border-2 font-mono text-sm ${bgClass}">
-            ${message}
+            [${type.toUpperCase()}] ${message}
         </div>
     `;
+}
+
+function showModalAlert(type, message) {
+    const alertDiv = document.getElementById('form-alert');
+    if (!alertDiv) {
+        // Fallback to global showAlert if available
+        if (typeof showAlert === 'function') {
+            if (showAlert.constructor.name === 'AsyncFunction') {
+                showAlert(message, type);
+            } else {
+                showAlert(type, message);
+            }
+        } else {
+            console.error('[Modal Alert]', type, message);
+        }
+        return;
+    }
+    
+    const bgClass = type === 'error' ? 'bg-cyber-red/20 text-cyber-red border-cyber-red' : 
+                    type === 'warning' ? 'bg-cyber-amber/20 text-cyber-amber border-cyber-amber' :
+                    'bg-cyber-green/20 text-cyber-green border-cyber-green';
+    alertDiv.innerHTML = `
+        <div class="mb-6 p-4 border-2 font-mono text-sm ${bgClass}">
+            [${type.toUpperCase()}] ${message}
+        </div>
+    `;
+    
+    setTimeout(() => {
+        alertDiv.innerHTML = '';
+    }, 5000);
 }
 </script>
